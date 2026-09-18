@@ -126,8 +126,37 @@ async def run_tests():
     assert sub_kb is not None, "Xatolik: Obuna tugmalari generatsiya qilinmadi!"
     print("✅ Barcha interfeys tugmalari va menyu panellari 100% to'g'ri generatsiya qilindi.")
 
-    # 8. Test ma'lumotlarini tozalash
-    print("\n[TEST 8] Test ma'lumotlarini tozalash...")
+    # 8. Tugmalar va Komandalarning kod sifatida qabul qilinmasligini tekshirish
+    print("\n[TEST 8] Tugmalar va buyruqlarni tekshirish (Kino kodi deb xato o'ylamaslik)...")
+    from handlers.user import is_system_or_button_text
+    test_button_texts = [
+        "🔍 Kino qidirish", "kino qidirish", "Kino qidirish", "Qidiruv",
+        "🔥 TOP Kinolar", "top kinolar", "TOP", "/top",
+        "🎲 Tasodifiy Film", "Tasodifiy kino", "tasodifiy",
+        "📢 Homiy Sahifalar", "Kanallarimiz", "obuna", "/obuna",
+        "👑 Admin Panel", "Admin panel", "Admin", "/admin",
+        "🎬 Bitta Film qo'shish", "Kino qo'shish", "Kino yuklash",
+        "📺 Serial yaratish", "Serial qo'shish", "Serial yuklash",
+        "➕ Serialga qism qo'shish", "Qism qo'shish", "Qism yuklash",
+        "🗑 O'chirish", "Kino o'chirish",
+        "📊 Statistika", "/stat",
+        "📋 Barcha kinolar", "Kinolar ro'yxati",
+        "📢 Kanallarni boshqarish", "Kanallar",
+        "✉️ Xabar tarqatish", "Xabar yuborish",
+        "🏠 Asosiy menyu", "Bosh menyu", "Menyu", "/menu",
+        "❌ Bekor qilish", "Bekor qilish", "/cancel"
+    ]
+    for btn in test_button_texts:
+        assert is_system_or_button_text(btn) is True, f"Xatolik: '{btn}' tugmasi tizim tomonidan tugma sifatida tanilmadi!"
+    
+    # Oddiy kino kodlari esa tugma deb hisoblanmasligi kerak:
+    assert is_system_or_button_text("105") is False, "105 kodi tugma deb xato belgilandi!"
+    assert is_system_or_button_text("999") is False, "999 kodi tugma deb xato belgilandi!"
+    assert is_system_or_button_text("forsaj_10") is False, "forsaj_10 kodi tugma deb xato belgilandi!"
+    print("✅ Tugmalar va tizim so'zlari 100% to'g'ri filtrlandi (Kinoning kodi deb adashtirilmaydi).")
+
+    # 9. Test ma'lumotlarini tozalash
+    print("\n[TEST 9] Test ma'lumotlarini tozalash...")
     await delete_movie(test_code)
     await delete_movie(series_code)
     await delete_channel("-1001234567890")

@@ -110,12 +110,14 @@ async def admin_panel_handler(message: Message):
     )
 
 
-@admin_router.message(F.text == "❌ Bekor qilish")
+@admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["bekor qilish", "bekor", "cancel"])))
 async def cancel_handler(message: Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state is not None:
         await state.clear()
-    await message.answer("✅ Amal bekor qilindi.", reply_markup=get_admin_main_kb())
+    is_adm = await is_admin_user(message.from_user.id)
+    kb = get_admin_main_kb() if is_adm else None
+    await message.answer("✅ Amal bekor qilindi.", reply_markup=kb)
 
 
 from aiogram.fsm.state import default_state
@@ -151,7 +153,9 @@ async def direct_media_upload_handler(message: Message, state: FSMContext, bot: 
                     reply_markup=get_admin_main_kb(),
                     parse_mode="HTML"
                 )
-                return
+            else:
+                await message.answer(f"❌ <code>{code}</code> kodli kino allaqachon mavjud!", reply_markup=get_admin_main_kb())
+            return
 
     # Agar izohida /addpart 205 1 bo'lsa
     if caption.startswith("/addpart "):
@@ -188,9 +192,10 @@ async def direct_media_upload_handler(message: Message, state: FSMContext, bot: 
 
 # ==================== BITTA FILM QO'SHISH ====================
 
-@admin_router.message(F.text == "🎬 Bitta Film qo'shish")
+@admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["bitta film", "kino qo'shish", "kino yuklash", "film qo'shish", "kino qoshish"])))
 async def start_add_single(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
     await state.set_state(AddSingleMovieState.waiting_for_video)
@@ -272,9 +277,12 @@ async def process_single_title(message: Message, state: FSMContext, bot: Bot):
 
 # ==================== SERIAL YARATISH ====================
 
-@admin_router.message(F.text == "📺 Serial yaratish")
+# ==================== SERIAL YARATISH ====================
+
+@admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["serial yaratish", "serial qo'shish", "serial yuklash", "serial qoshish"])))
 async def start_add_series(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
     await state.set_state(AddSeriesState.waiting_for_code)
@@ -360,9 +368,10 @@ async def process_series_finish(message: Message, state: FSMContext, bot: Bot):
 
 # ==================== SERIALGA QISM QO'SHISH ====================
 
-@admin_router.message(F.text == "➕ Serialga qism qo'shish")
+@admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["serialga qism", "qism qo'shish", "qism yuklash", "qism qoshish"])))
 async def start_add_episode(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
     await state.set_state(AddEpisodeState.waiting_for_code)
@@ -442,7 +451,7 @@ async def process_episode_video(message: Message, state: FSMContext):
 # Tezkor qism qo'shish: /addpart <serial_kodi> <qism_raqami>
 @admin_router.message(Command("addpart"))
 async def quick_add_part(message: Message):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
         return
 
     file_id = None
@@ -483,7 +492,7 @@ async def quick_add_part(message: Message):
 # Tezkor bitta kino qo'shish buyrug'i: /add <kod> <nomi>
 @admin_router.message(Command("add"))
 async def quick_add_movie(message: Message, bot: Bot):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
         return
 
     file_id = None
@@ -538,9 +547,10 @@ async def quick_add_movie(message: Message, bot: Bot):
 
 # ==================== O'CHIRISH ====================
 
-@admin_router.message(F.text == "🗑 O'chirish")
+@admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["o'chirish", "ochirish", "kino o'chirish"])))
 async def start_delete_movie(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
     await state.set_state(DeleteMovieState.waiting_for_code)
@@ -565,9 +575,10 @@ async def process_delete_movie(message: Message, state: FSMContext):
 
 # ==================== STATISTIKA ====================
 
-@admin_router.message(F.text == "📊 Statistika")
+@admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["statistika", "stat"])))
 async def stats_handler(message: Message):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
     users_count = await count_users()
@@ -581,9 +592,10 @@ async def stats_handler(message: Message):
     )
 
 
-@admin_router.message(F.text == "📋 Barcha kinolar")
+@admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["barcha kinolar", "kinolar ro'yxati", "kinolar royxati"])))
 async def recent_movies_handler(message: Message):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
     movies = await get_recent_movies(limit=25)
@@ -601,13 +613,14 @@ async def recent_movies_handler(message: Message):
 
 # ==================== KANALLARNI BOSHQARISH ====================
 
-@admin_router.message(F.text == "📢 Kanallarni boshqarish")
+@admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["kanallarni boshqarish", "kanal boshqaruv", "kanallar sozlamasi"])))
 async def manage_channels_handler(message: Message):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
     channels = await get_channels()
-    from database import get_setting, set_setting
+    from database import get_setting
     insta_url = await get_setting("INSTAGRAM_URL", config.INSTAGRAM_URL)
     insta_name = await get_setting("INSTAGRAM_NAME", config.INSTAGRAM_NAME)
 
@@ -639,7 +652,8 @@ async def manage_channels_handler(message: Message):
 
 @admin_router.callback_query(F.data == "edit_insta_btn")
 async def edit_insta_callback(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
+    if not await is_admin_user(callback.from_user.id):
+        await callback.answer("⚠️ Faqat adminlar uchun!", show_alert=True)
         return
 
     await state.set_state(EditInstagramState.waiting_for_insta)
@@ -682,7 +696,8 @@ async def process_edit_insta(message: Message, state: FSMContext):
 
 @admin_router.callback_query(F.data == "add_channel_btn")
 async def add_channel_callback(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
+    if not await is_admin_user(callback.from_user.id):
+        await callback.answer("⚠️ Faqat adminlar uchun!", show_alert=True)
         return
 
     await state.set_state(AddChannelState.waiting_for_id)
@@ -762,7 +777,8 @@ async def add_channel_finish(message: Message, state: FSMContext):
 
 @admin_router.callback_query(F.data.startswith("del_channel:"))
 async def delete_channel_callback(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
+    if not await is_admin_user(callback.from_user.id):
+        await callback.answer("⚠️ Faqat adminlar uchun!", show_alert=True)
         return
 
     ch_id = callback.data.split(":", 1)[1]
@@ -793,9 +809,10 @@ async def delete_channel_callback(callback: CallbackQuery):
 
 # ==================== XABAR TARQATISH (BROADCAST) ====================
 
-@admin_router.message(F.text == "✉️ Xabar tarqatish")
+@admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["xabar tarqatish", "xabar yuborish"])))
 async def broadcast_start(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
     await state.set_state(BroadcastState.waiting_for_message)

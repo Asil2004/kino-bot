@@ -16,16 +16,38 @@ import config
 
 user_router = Router()
 
-USER_MENU_BUTTONS = [
-    "🔍 Kino qidirish", "🔥 TOP Kinolar", "🎲 Tasodifiy Film", 
-    "📢 Homiy Sahifalar", "👑 Admin Panel", "🏠 Asosiy menyu"
+USER_KEYWORDS = [
+    "kino qidirish", "qidiruv", "kino izlash", "search",
+    "top kinolar", "top kino", "top",
+    "tasodifiy", "random",
+    "homiy", "kanallarimiz", "kanallar", "kanal", "obuna", "channels",
+    "admin panel", "admin",
+    "asosiy menyu", "bosh menyu", "menyu", "menu", "main"
 ]
 
-ADMIN_BUTTONS = [
-    "🎬 Bitta Film qo'shish", "📺 Serial yaratish", "➕ Serialga qism qo'shish",
-    "🗑 O'chirish", "📊 Statistika", "📋 Barcha kinolar",
-    "📢 Kanallarni boshqarish", "✉️ Xabar tarqatish", "❌ Bekor qilish"
+ADMIN_KEYWORDS = [
+    "bitta film", "kino qo'shish", "kino yuklash", "film qo'shish", "kino qoshish",
+    "serial yaratish", "serial qo'shish", "serial yuklash", "serial qoshish",
+    "serialga qism", "qism qo'shish", "qism yuklash", "qism qoshish",
+    "o'chirish", "ochirish", "kino o'chirish",
+    "statistika", "stat",
+    "barcha kinolar", "kinolar ro'yxati", "kinolar royxati",
+    "kanallarni boshqarish", "kanal boshqaruv", "kanallar sozlamasi",
+    "xabar tarqatish", "xabar yuborish", "broadcast",
+    "bekor qilish", "bekor", "cancel"
 ]
+
+GREETING_WORDS = [
+    "salom", "assalomu alaykum", "assalom alaykum", "assalamu alaykum",
+    "salom aleykum", "privet", "hello", "hi", "hey", "qalesan", "start"
+]
+
+
+def is_system_or_button_text(text: str) -> bool:
+    t = text.lower().strip()
+    if t.startswith("/"):
+        return True
+    return any(k in t for k in USER_KEYWORDS + ADMIN_KEYWORDS)
 
 
 async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list, str, str]:
@@ -107,7 +129,7 @@ async def start_handler(message: Message, bot: Bot):
 
 # ==================== ASOSIY MENYU BUYRUQLARI ====================
 
-@user_router.message(F.text.in_(["🏠 Asosiy menyu", "/menu"]))
+@user_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["asosiy menyu", "bosh menyu", "menyu", "/menu", "/main"])))
 async def home_menu_handler(message: Message):
     is_admin = await is_admin_user(message.from_user.id)
     await message.answer(
@@ -117,7 +139,7 @@ async def home_menu_handler(message: Message):
     )
 
 
-@user_router.message(F.text == "🔍 Kino qidirish")
+@user_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["kino qidirish", "qidiruv", "kino izlash", "/search"])))
 async def search_hint_handler(message: Message):
     await message.answer(
         "🔍 <b>Kino yoki Serialni topish:</b>\n\n"
@@ -126,7 +148,7 @@ async def search_hint_handler(message: Message):
     )
 
 
-@user_router.message(F.text.in_(["🔥 TOP Kinolar", "/top"]))
+@user_router.message(F.text.func(lambda t: t and ("top kinolar" in t.lower() or "top kino" in t.lower() or t.lower().strip() in ["/top", "top", "🔥 top kinolar"])))
 async def top_movies_handler(message: Message):
     movies = await get_top_movies(limit=10)
     if not movies:
@@ -142,7 +164,7 @@ async def top_movies_handler(message: Message):
     await message.answer(text, parse_mode="HTML")
 
 
-@user_router.message(F.text.in_(["🎲 Tasodifiy Film", "/tasodifiy"]))
+@user_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["tasodifiy film", "tasodifiy kino", "tasodifiy", "/tasodifiy", "random"])))
 async def random_movie_handler(message: Message, bot: Bot):
     code = await get_random_movie_code()
     if not code:
@@ -153,7 +175,7 @@ async def random_movie_handler(message: Message, bot: Bot):
     await send_movie_by_code(message, bot, code)
 
 
-@user_router.message(F.text.in_(["📢 Homiy Sahifalar", "/obuna"]))
+@user_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["homiy sahifalar", "homiy", "kanallarimiz", "/obuna", "obuna"])))
 async def test_subscription_handler(message: Message, bot: Bot):
     channels = await get_channels()
     all_channels = []
@@ -173,10 +195,12 @@ async def test_subscription_handler(message: Message, bot: Bot):
     )
 
 
-@user_router.message(F.text == "👑 Admin Panel")
+@user_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["admin panel", "👑 admin panel", "🛠 admin panel", "/admin", "admin"])))
 async def admin_button_handler(message: Message):
     if await is_admin_user(message.from_user.id):
         await message.answer("👑 <b>Admin boshqaruv paneli:</b>", reply_markup=get_admin_main_kb(), parse_mode="HTML")
+    else:
+        await message.answer(f"⚠️ Ushbu bo'lim faqat bot adminlari uchun!\nSizning ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
 
 
 # ==================== OBUNA CALLBACK ====================
@@ -243,11 +267,13 @@ async def check_sub_callback(callback: CallbackQuery, bot: Bot):
 
 
 async def send_movie_by_code(message: Message, bot: Bot, code: str):
+    is_admin = await is_admin_user(message.from_user.id)
     movie = await get_movie(code)
     if not movie:
         await message.answer(
             f"❌ <b>{code}</b> kodli kino yoki serial topilmadi!\n\n"
             "Iltimos, kodni to'g'ri kiritganingizni tekshiring.",
+            reply_markup=get_user_main_kb(is_admin=is_admin),
             parse_mode="HTML"
         )
         return
@@ -393,10 +419,23 @@ async def code_input_handler(message: Message, state: FSMContext, bot: Bot):
 
     text = message.text.strip()
     
-    if text.startswith("/") or text in USER_MENU_BUTTONS or text in ADMIN_BUTTONS:
+    # Agar komanda yoki menyu/admin tugmasi bo'lsa kod deb qidirmaymiz
+    if is_system_or_button_text(text):
         return
 
     user_id = message.from_user.id
+    is_admin = await is_admin_user(user_id)
+
+    # Agar salomlashish yoki umumiy so'z bo'lsa, xush kelibsiz xabarini chiqaramiz
+    if text.lower() in GREETING_WORDS:
+        await message.answer(
+            f"👋 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
+            "🔍 Kinoni tomosha qilish uchun uning <b>kodini yuboring</b> (Masalan: <code>105</code>) yoki quyidagi menyudan foydalaning.",
+            reply_markup=get_user_main_kb(is_admin=is_admin),
+            parse_mode="HTML"
+        )
+        return
+
     is_subscribed, unsubscribed, insta_url, insta_name = await check_user_subscriptions(bot, user_id)
 
     if not is_subscribed:
