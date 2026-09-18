@@ -426,6 +426,17 @@ async def code_input_handler(message: Message, state: FSMContext, bot: Bot):
     user_id = message.from_user.id
     is_admin = await is_admin_user(user_id)
 
+    # Agar foydalanuvchi ADMIN bo'lsa, u kino qidirmaydi (adminga xato bermasdan admin panel ko'rsatiladi)
+    if is_admin:
+        await message.answer(
+            "👑 <b>Admin boshqaruv paneli:</b>\n\n"
+            "Kino yoki serial yuklash, o'chirish yoki sozlamalar uchun quyidagi tugmalardan birini tanlang:\n\n"
+            "📹 <i>Shuningdek, istalgan video yoki faylni botga tashlasangiz, avtomatik kino sifatida yuklanadi!</i>",
+            reply_markup=get_admin_main_kb(),
+            parse_mode="HTML"
+        )
+        return
+
     # Agar salomlashish yoki umumiy so'z bo'lsa, xush kelibsiz xabarini chiqaramiz
     if text.lower() in GREETING_WORDS:
         await message.answer(

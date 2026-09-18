@@ -8,6 +8,10 @@ on:
     # Har 3 soatda avtomatik yangilanib, uzluksiz 24/7 ishlashini ta'minlaydi
     - cron: '0 */3 * * *'
 
+concurrency:
+  group: telegram-kino-bot-service
+  cancel-in-progress: true
+
 permissions:
   contents: write
   actions: write
@@ -25,6 +29,39 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Eski ishlayotgan barcha nusxalarni to'xtatish (Kill duplicate instances)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN: ${{ github.run_id }}
+        run: |
+          python -c "
+          import urllib.request, json, os, time
+          token = os.environ.get('GH_TOKEN')
+          repo = os.environ.get('REPO')
+          current_run = int(os.environ.get('CURRENT_RUN', 0))
+          headers = {'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'}
+          
+          for status in ['in_progress', 'queued']:
+              url = f'https://api.github.com/repos/{repo}/actions/runs?status={status}'
+              req = urllib.request.Request(url, headers=headers)
+              try:
+                  with urllib.request.urlopen(req) as response:
+                      data = json.loads(response.read().decode())
+                      for run in data.get('workflow_runs', []):
+                          run_id = run['id']
+                          if run_id != current_run:
+                              print(f'Eski duplicate runner bekor qilinmoqda: {run_id}')
+                              cancel_req = urllib.request.Request(f'https://api.github.com/repos/{repo}/actions/runs/{run_id}/cancel', headers=headers, method='POST')
+                              try:
+                                  urllib.request.urlopen(cancel_req)
+                              except Exception:
+                                  pass
+              except Exception as e:
+                  print('Status check error:', e)
+          time.sleep(3)
+          "
+
       - name: Kerakli kutubxonalarni o'rnatish
         run: |
           python -m pip install --upgrade pip
@@ -40,6 +77,14 @@ jobs:
           INSTAGRAM_NAME: "asilbek_ravshanov04"
         run: |
           echo "=========================================="
-          echo "🤖 Bugunkinolar_bot 24/7 serverda ishlamoqda..."
+          echo "🤖 Bugunkinolar_bot 24/7 yagona nusxada ishlamoqda..."
           echo "=========================================="
           python bot.py
+
+      - name: Baza o'zgarishlarini saqlash
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add bot.db
+          git diff --staged --quiet || (git commit -m "chore(db): sync database state [skip ci]" && git push)
