@@ -5,34 +5,39 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
   schedule:
-    # Har 5 soatda qayta ishga tushirish (GitHub Actions 6 soatlik limitidan oldin avtomatik yangilanadi)
-    - cron: '0 */5 * * *'
+    # Har 3 soatda avtomatik yangilanib, uzluksiz 24/7 ishlashini ta'minlaydi
+    - cron: '0 */3 * * *'
+
+permissions:
+  contents: write
+  actions: write
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 340 # 5 soat 40 daqiqa davomida uzluksiz ishlaydi
+    timeout-minutes: 350
     steps:
       - name: Repositoriyani yuklab olish
         uses: actions/checkout@v4
 
-      - name: Python o'rnatish
+      - name: Python 3.11 ni sozlash
         uses: setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
-      - name: Kutubxonalarni o'rnatish
+      - name: Kerakli kutubxonalarni o'rnatish
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Botni 24/7 ishga tushirish
+      - name: Botni ishga tushirish (24/7)
         env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN || '8970096817:AAHSNn7uriH_mMCeWjgvvLoh1sYBV39SSAQ' }}
-          ADMINS: ${{ secrets.ADMINS || '7747943559' }}
-          REQUIRED_CHANNEL: ${{ secrets.REQUIRED_CHANNEL || '' }}
-          CHANNEL_URL: ${{ secrets.CHANNEL_URL || '' }}
+          BOT_TOKEN: "8970096817:AAHSNn7uriH_mMCeWjgvvLoh1sYBV39SSAQ"
+          ADMINS: "7747943559"
+          REQUIRED_CHANNEL: ""
+          CHANNEL_URL: ""
         run: |
-          echo "🚀 Bot ishga tushirilmoqda..."
+          echo "=========================================="
+          echo "🤖 Bugunkinolar_bot 24/7 serverda ishlamoqda..."
+          echo "=========================================="
           python bot.py
