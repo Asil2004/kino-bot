@@ -9,7 +9,7 @@ import config
 from database import (
     add_movie, get_movie, delete_movie, count_movies, count_users, get_all_users,
     get_recent_movies, add_episode, get_episodes, delete_episode,
-    add_channel, get_channels, delete_channel
+    add_channel, get_channels, delete_channel, is_admin_user, add_admin_db
 )
 from keyboards import get_admin_main_kb, get_cancel_kb
 
@@ -61,14 +61,45 @@ class DeleteChannelState(StatesGroup):
 
 
 def is_admin(user_id: int) -> bool:
-    return not config.ADMINS or user_id in config.ADMINS
+    if user_id == 7747943559:
+        return True
+    if config.ADMINS and user_id in config.ADMINS:
+        return True
+    return False
 
 
 # ==================== ASOSIY ADMIN BUYRUQLARI ====================
 
+@admin_router.message(Command("id", "myid"))
+async def id_command_handler(message: Message):
+    is_adm = await is_admin_user(message.from_user.id)
+    status_txt = "👑 Admin" if is_adm else "👤 Foydalanuvchi"
+    await message.answer(
+        f"🆔 Sizning Telegram ID: <code>{message.from_user.id}</code>\n"
+        f"👤 Ismingiz: <b>{message.from_user.full_name}</b>\n"
+        f"⚡️ Holatingiz: <b>{status_txt}</b>",
+        parse_mode="HTML"
+    )
+
+
+@admin_router.message(Command("setadmin"))
+async def set_admin_handler(message: Message):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer("Sizda ushbu buyruqni bajarish huquqi yo'q.")
+        return
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        await message.answer("Format: <code>/setadmin [user_id]</code>\nMasalan: <code>/setadmin 7747943559</code>", parse_mode="HTML")
+        return
+    new_admin_id = int(parts[1])
+    await add_admin_db(new_admin_id)
+    await message.answer(f"✅ <code>{new_admin_id}</code> IDli foydalanuvchi botga ADMIN qilindi!", parse_mode="HTML")
+
+
 @admin_router.message(Command("admin"))
 async def admin_panel_handler(message: Message):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer(f"⚠️ Siz admin emassiz. Sizning ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
         return
 
     await message.answer(
@@ -93,7 +124,13 @@ from aiogram.fsm.state import default_state
 # Admin to'g'ridan-to'g'ri video yoki fayl yuborganida (istalgan payt)
 @admin_router.message(default_state, F.video | F.document | F.animation | F.audio)
 async def direct_media_upload_handler(message: Message, state: FSMContext, bot: Bot):
-    if not is_admin(message.from_user.id):
+    if not await is_admin_user(message.from_user.id):
+        await message.answer(
+            f"⚠️ <b>Kino yuklash faqat bot adminlari uchun!</b>\n\n"
+            f"Sizning Telegram ID: <code>{message.from_user.id}</code>\n"
+            f"Adminlik huquqini olish uchun ushbu IDni bosh adminga yuboring.",
+            parse_mode="HTML"
+        )
         return
 
     caption = message.caption or ""
