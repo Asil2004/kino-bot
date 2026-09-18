@@ -68,6 +68,14 @@ async def init_db():
             )
         """)
         
+        # Sozlamalar jadvali
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        
         # Majburiy obuna kanallari
         await db.execute("""
             CREATE TABLE IF NOT EXISTS channels (
@@ -276,6 +284,24 @@ async def delete_episode(movie_code: str, episode_number: int) -> bool:
         )
         await db.commit()
         return cursor.rowcount > 0
+
+
+# ==================== SOZLAMALAR ====================
+
+async def set_setting(key: str, value: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key.strip(), value.strip())
+        )
+        await db.commit()
+
+
+async def get_setting(key: str, default: str = "") -> str:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (key.strip(),)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else default
 
 
 # ==================== KANALLAR ====================

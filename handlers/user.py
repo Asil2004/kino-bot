@@ -5,7 +5,7 @@ from aiogram.fsm.state import default_state
 
 from database import (
     add_user, get_movie, get_channels, is_user_sub_confirmed, set_user_subscribed,
-    get_episodes, get_episode, get_top_movies, get_random_movie_code
+    get_episodes, get_episode, get_top_movies, get_random_movie_code, get_setting
 )
 from keyboards import (
     get_subscription_kb, get_share_movie_kb, get_episodes_kb, get_back_to_series_kb,
@@ -27,7 +27,7 @@ ADMIN_BUTTONS = [
 ]
 
 
-async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list]:
+async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list, str, str]:
     """Foydalanuvchi barcha kanallarga a'zo bo'lganini va Instagram tasdiqlanganini tekshiradi."""
     channels = await get_channels()
     all_channels = []
@@ -47,16 +47,18 @@ async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list]:
         except Exception:
             pass
 
-    if unsubscribed:
-        return False, unsubscribed
+    insta_url = await get_setting("INSTAGRAM_URL", getattr(config, "INSTAGRAM_URL", ""))
+    insta_name = await get_setting("INSTAGRAM_NAME", getattr(config, "INSTAGRAM_NAME", ""))
 
-    has_insta = bool(getattr(config, "INSTAGRAM_URL", None))
+    if unsubscribed:
+        return False, unsubscribed, insta_url, insta_name
+
     confirmed = await is_user_sub_confirmed(user_id)
 
-    if (all_channels or has_insta) and not confirmed:
-        return False, all_channels
+    if (all_channels or insta_url) and not confirmed:
+        return False, all_channels, insta_url, insta_name
 
-    return True, []
+    return True, [], insta_url, insta_name
 
 
 @user_router.message(CommandStart())
@@ -68,7 +70,7 @@ async def start_handler(message: Message, bot: Bot):
     args = message.text.split(maxsplit=1)
     movie_code = args[1].strip() if len(args) > 1 else None
 
-    is_subscribed, unsubscribed = await check_user_subscriptions(bot, user.id)
+    is_subscribed, unsubscribed, insta_url, insta_name = await check_user_subscriptions(bot, user.id)
 
     if not is_subscribed:
         txt = (
@@ -78,7 +80,10 @@ async def start_handler(message: Message, bot: Bot):
         )
         await message.answer(
             txt,
-            reply_markup=get_subscription_kb(unsubscribed, movie_code=movie_code),
+            reply_markup=get_subscription_kb(
+                unsubscribed, movie_code=movie_code, 
+                insta_url=insta_url, insta_name=insta_name
+            ),
             parse_mode="HTML"
         )
         return
@@ -152,10 +157,13 @@ async def test_subscription_handler(message: Message, bot: Bot):
     for ch in channels:
         all_channels.append((ch[1], ch[2], ch[3]))
 
+    insta_url = await get_setting("INSTAGRAM_URL", getattr(config, "INSTAGRAM_URL", ""))
+    insta_name = await get_setting("INSTAGRAM_NAME", getattr(config, "INSTAGRAM_NAME", ""))
+
     await message.answer(
         "📢 <b>Bizning rasmiy homiy sahifalarimiz:</b>\n\n"
         "Quyidagi sahifalarga obuna bo'ling:",
-        reply_markup=get_subscription_kb(all_channels),
+        reply_markup=get_subscription_kb(all_channels, insta_url=insta_url, insta_name=insta_name),
         parse_mode="HTML"
     )
 
@@ -192,13 +200,19 @@ async def check_sub_callback(callback: CallbackQuery, bot: Bot):
         except Exception:
             pass
 
+    insta_url = await get_setting("INSTAGRAM_URL", getattr(config, "INSTAGRAM_URL", ""))
+    insta_name = await get_setting("INSTAGRAM_NAME", getattr(config, "INSTAGRAM_NAME", ""))
+
     if tg_unsubscribed:
         await callback.answer("❌ Siz hali barcha Telegram kanallariga a'zo bo'lmadingiz!", show_alert=True)
         try:
             await callback.message.edit_text(
                 "❌ <b>Siz hali barcha kanallarga a'zo bo'lmadingiz!</b>\n\n"
                 "Iltimos, quyidagi barcha sahifalarga a'zo bo'ling va so'ngra qayta tekshiring:",
-                reply_markup=get_subscription_kb(tg_unsubscribed, movie_code=movie_code),
+                reply_markup=get_subscription_kb(
+                    tg_unsubscribed, movie_code=movie_code,
+                    insta_url=insta_url, insta_name=insta_name
+                ),
                 parse_mode="HTML"
             )
         except Exception:
@@ -375,13 +389,16 @@ async def code_input_handler(message: Message, bot: Bot):
         return
 
     user_id = message.from_user.id
-    is_subscribed, unsubscribed = await check_user_subscriptions(bot, user_id)
+    is_subscribed, unsubscribed, insta_url, insta_name = await check_user_subscriptions(bot, user_id)
 
     if not is_subscribed:
         await message.answer(
             f"⚠️ <b>«{text}» kodli kinoni tomosha qilish uchun quyidagi sahifalarimizga obuna bo'ling:</b>\n\n"
             "<i>Obuna bo'lib, «A'zo bo'ldim / Tekshirish» tugmasini bosing. Kino avtomatik yuboriladi!</i>",
-            reply_markup=get_subscription_kb(unsubscribed, movie_code=text),
+            reply_markup=get_subscription_kb(
+                unsubscribed, movie_code=text,
+                insta_url=insta_url, insta_name=insta_name
+            ),
             parse_mode="HTML"
         )
         return

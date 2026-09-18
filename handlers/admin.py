@@ -52,6 +52,10 @@ class AddChannelState(StatesGroup):
     waiting_for_link = State()
 
 
+class EditInstagramState(StatesGroup):
+    waiting_for_insta = State()
+
+
 class DeleteChannelState(StatesGroup):
     waiting_for_id = State()
 
@@ -492,23 +496,77 @@ async def manage_channels_handler(message: Message):
         return
 
     channels = await get_channels()
-    text = "📢 <b>Majburiy obuna kanallari boshqaruvi:</b>\n\n"
+    from database import get_setting, set_setting
+    insta_url = await get_setting("INSTAGRAM_URL", config.INSTAGRAM_URL)
+    insta_name = await get_setting("INSTAGRAM_NAME", config.INSTAGRAM_NAME)
+
+    text = "📢 <b>Majburiy obuna va Kanallar boshqaruvi:</b>\n\n"
+
+    if insta_url:
+        text += f"📸 <b>Ulangan Instagram:</b> @{insta_name}\n🔗 {insta_url}\n\n"
+    else:
+        text += "📸 <i>Instagram ulanmagan.</i>\n\n"
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     buttons = []
 
     if channels:
-        text += "Ulangan kanallar ro'yxati:\n"
+        text += "📢 <b>Ulangan Telegram kanallar:</b>\n"
         for ch in channels:
             text += f"🔹 <b>{ch[2]}</b> (<code>{ch[1]}</code>)\n🔗 {ch[3]}\n\n"
             buttons.append([
                 InlineKeyboardButton(text=f"🗑 {ch[2]} ni o'chirish", callback_data=f"del_channel:{ch[1]}")
             ])
     else:
-        text += "<i>Hozircha majburiy obuna uchun kanal ulanmagan.</i>\n\n"
+        text += "📢 <i>Hozircha Telegram kanal ulanmagan.</i>\n\n"
 
     buttons.append([InlineKeyboardButton(text="➕ Yangi kanal/guruh qo'shish", callback_data="add_channel_btn")])
+    buttons.append([InlineKeyboardButton(text="📸 Instagramni o'zgartirish", callback_data="edit_insta_btn")])
+
     await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+
+
+@admin_router.callback_query(F.data == "edit_insta_btn")
+async def edit_insta_callback(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+
+    await state.set_state(EditInstagramState.waiting_for_insta)
+    await callback.message.answer(
+        "📸 <b>Instagram sahifasini o'zgartirish:</b>\n\n"
+        "Yangi Instagram username (@username) yoki to'liq havolasini yuboring (Masalan: <code>asilbek_ravshanov04</code> yoki <code>https://instagram.com/asilbek_ravshanov04</code>):\n\n"
+        "<i>Instagramni o'chirish uchun /ochirish deb yozing.</i>",
+        reply_markup=get_cancel_kb(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@admin_router.message(EditInstagramState.waiting_for_insta, F.text)
+async def process_edit_insta(message: Message, state: FSMContext):
+    from database import set_setting
+    text = message.text.strip()
+    await state.clear()
+
+    if text in ["/ochirish", "/delete", "/none"]:
+        await set_setting("INSTAGRAM_URL", "")
+        await set_setting("INSTAGRAM_NAME", "")
+        await message.answer("✅ Instagram sahifasi obunalar ro'yxatidan olib tashlandi.", reply_markup=get_admin_main_kb())
+        return
+
+    insta_name = text.replace("https://instagram.com/", "").replace("https://www.instagram.com/", "").replace("@", "").strip().strip("/")
+    insta_url = f"https://instagram.com/{insta_name}"
+
+    await set_setting("INSTAGRAM_URL", insta_url)
+    await set_setting("INSTAGRAM_NAME", insta_name)
+
+    await message.answer(
+        f"✅ <b>Instagram sahifasi muvaffaqiyatli saqlandi!</b>\n\n"
+        f"📸 Profil: <b>@{insta_name}</b>\n"
+        f"🔗 Havola: {insta_url}",
+        reply_markup=get_admin_main_kb(),
+        parse_mode="HTML"
+    )
 
 
 @admin_router.callback_query(F.data == "add_channel_btn")
