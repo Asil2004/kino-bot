@@ -194,10 +194,21 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
             )
 
 
-@user_router.message(F.text)
+from aiogram.fsm.state import default_state
+
+
+ADMIN_BUTTONS = [
+    "🎬 Kino qo'shish", "🗑 Kino o'chirish", "📊 Statistika",
+    "📋 So'nggi kinolar", "📢 Kanallarni boshqarish", "✉️ Xabar tarqatish", "❌ Bekor qilish"
+]
+
+
+@user_router.message(default_state, F.text)
 async def code_input_handler(message: Message, bot: Bot):
     text = message.text.strip()
-    if text.startswith("/"):
+    
+    # Agar buyruq yoki admin menyusi tugmalari bo'lsa o'tkazib yuboramiz
+    if text.startswith("/") or text in ADMIN_BUTTONS:
         return
 
     user_id = message.from_user.id
