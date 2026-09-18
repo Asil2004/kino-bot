@@ -164,17 +164,17 @@ async def process_single_title(message: Message, state: FSMContext, bot: Bot):
         )
 
 
-# ==================== SERIAL / ANIME YARATISH ====================
+# ==================== SERIAL YARATISH ====================
 
-@admin_router.message(F.text == "📺 Serial / Anime yaratish")
+@admin_router.message(F.text == "📺 Serial yaratish")
 async def start_add_series(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
 
     await state.set_state(AddSeriesState.waiting_for_code)
     await message.answer(
-        "📺 <b>Yangi Serial / Anime yaratish:</b>\n\n"
-        "🔢 Serial uchun <b>noyob kod</b> kiriting (Masalan: <code>205</code> yoki <code>naruto</code>):",
+        "📺 <b>Yangi Serial yaratish:</b>\n\n"
+        "🔢 Serial uchun <b>noyob kod</b> kiriting (Masalan: <code>205</code> yoki <code>qashqirlar</code>):",
         reply_markup=get_cancel_kb(),
         parse_mode="HTML"
     )
@@ -185,7 +185,7 @@ async def process_series_code(message: Message, state: FSMContext):
     code = message.text.strip()
     await state.update_data(code=code)
     await state.set_state(AddSeriesState.waiting_for_title)
-    await message.answer("📝 Serial / Anime nomini kiriting (Masalan: <i>Naruto: Dovul epopeyasi</i>):", parse_mode="HTML")
+    await message.answer("📝 Serial nomini kiriting (Masalan: <i>Qashqirlar Makoni</i>):", parse_mode="HTML")
 
 
 @admin_router.message(AddSeriesState.waiting_for_title, F.text)

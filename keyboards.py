@@ -6,7 +6,7 @@ import config
 def get_admin_main_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🎬 Bitta Film qo'shish"), KeyboardButton(text="📺 Serial / Anime yaratish")],
+            [KeyboardButton(text="🎬 Bitta Film qo'shish"), KeyboardButton(text="📺 Serial yaratish")],
             [KeyboardButton(text="➕ Serialga qism qo'shish"), KeyboardButton(text="🗑 O'chirish")],
             [KeyboardButton(text="📊 Statistika"), KeyboardButton(text="📋 Barcha kinolar")],
             [KeyboardButton(text="📢 Kanallarni boshqarish"), KeyboardButton(text="✉️ Xabar tarqatish")],

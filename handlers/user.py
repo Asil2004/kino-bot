@@ -15,7 +15,7 @@ import config
 user_router = Router()
 
 ADMIN_BUTTONS = [
-    "🎬 Bitta Film qo'shish", "📺 Serial / Anime yaratish", "➕ Serialga qism qo'shish",
+    "🎬 Bitta Film qo'shish", "📺 Serial yaratish", "➕ Serialga qism qo'shish",
     "🗑 O'chirish", "📊 Statistika", "📋 Barcha kinolar",
     "📢 Kanallarni boshqarish", "✉️ Xabar tarqatish", "❌ Bekor qilish"
 ]
