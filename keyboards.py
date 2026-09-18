@@ -23,9 +23,19 @@ def get_cancel_kb() -> ReplyKeyboardMarkup:
     )
 
 
+import config
+
+
 # Majburiy obuna inline tugmalari
 def get_subscription_kb(channels: list, movie_code: str | None = None) -> InlineKeyboardMarkup:
     buttons = []
+    
+    # Instagram sahifasi
+    if getattr(config, "INSTAGRAM_URL", None):
+        insta_label = f"📸 Instagram: @{config.INSTAGRAM_NAME}" if getattr(config, "INSTAGRAM_NAME", None) else "📸 Instagram sahifamiz"
+        buttons.append([InlineKeyboardButton(text=insta_label, url=config.INSTAGRAM_URL)])
+
+    # Telegram kanallari
     for idx, (ch_id, ch_name, invite_link) in enumerate(channels, start=1):
         name = ch_name or f"Kanal #{idx}"
         buttons.append([InlineKeyboardButton(text=f"➕ {name}", url=invite_link)])

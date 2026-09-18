@@ -36,6 +36,8 @@ jobs:
           ADMINS: "7747943559"
           REQUIRED_CHANNEL: ""
           CHANNEL_URL: ""
+          INSTAGRAM_URL: "https://instagram.com/asilbek_ravshanov04"
+          INSTAGRAM_NAME: "asilbek_ravshanov04"
         run: |
           echo "=========================================="
           echo "🤖 Bugunkinolar_bot 24/7 serverda ishlamoqda..."

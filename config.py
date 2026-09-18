@@ -14,3 +14,7 @@ if 7747943559 not in ADMINS:
 # Majburiy obuna kanallari
 REQUIRED_CHANNEL = os.getenv("REQUIRED_CHANNEL", "").strip()
 CHANNEL_URL = os.getenv("CHANNEL_URL", "").strip()
+
+# Instagram sahifasi
+INSTAGRAM_URL = os.getenv("INSTAGRAM_URL", "https://instagram.com/asilbek_ravshanov04").strip()
+INSTAGRAM_NAME = os.getenv("INSTAGRAM_NAME", "asilbek_ravshanov04").strip()
