@@ -1,7 +1,9 @@
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart
-from database import add_user, get_movie, get_channels
+from aiogram.filters import CommandStart, Command
+from database import (
+    add_user, get_movie, get_channels, is_user_sub_confirmed, set_user_subscribed
+)
 from keyboards import get_subscription_kb, get_share_movie_kb
 import config
 
@@ -9,24 +11,17 @@ user_router = Router()
 
 
 async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list]:
-    """Foydalanuvchi barcha kanallarga a'zo bo'lganini tekshiradi."""
-    # Agar admin bo'lsa majburiy obunani tekshirmaydi
-    if user_id in config.ADMINS:
-        return True, []
-
+    """Foydalanuvchi barcha kanallarga a'zo bo'lganini va Instagram tasdiqlanganini tekshiradi."""
     channels = await get_channels()
     all_channels = []
     
     # config.py dagi statik kanal bo'lsa
-    if config.REQUIRED_CHANNEL:
+    if getattr(config, "REQUIRED_CHANNEL", None):
         all_channels.append((config.REQUIRED_CHANNEL, "Asosiy kanal", config.CHANNEL_URL or "https://t.me"))
     
     for ch in channels:
         # id, channel_id, channel_name, invite_link
         all_channels.append((ch[1], ch[2], ch[3]))
-
-    if not all_channels:
-        return True, []
 
     unsubscribed = []
     for ch_id, ch_name, invite_link in all_channels:
@@ -38,7 +33,18 @@ async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list]:
             # Agar bot kanalda admin bo'lmasa yoki kanal topilmasa foydalanuvchini to'xtatmaydi
             pass
 
-    return (len(unsubscribed) == 0), unsubscribed
+    # Agar Telegram kanallardan birontasiga a'zo bo'lmasa
+    if unsubscribed:
+        return False, unsubscribed
+
+    # Agar Instagram ulanagan bo'lsa va foydalanuvchi hali tasdiqlamagan bo'lsa
+    has_insta = bool(getattr(config, "INSTAGRAM_URL", None))
+    confirmed = await is_user_sub_confirmed(user_id)
+
+    if (all_channels or has_insta) and not confirmed:
+        return False, all_channels
+
+    return True, []
 
 
 @user_router.message(CommandStart())
@@ -55,7 +61,7 @@ async def start_handler(message: Message, bot: Bot):
     if not is_subscribed:
         txt = (
             f"👋 <b>Assalomu alaykum, {user.first_name}!</b>\n\n"
-            "⚠️ Botdan to'liq foydalanish va kinoni yuklab olish uchun quyidagi kanallarga obuna bo'ling:\n\n"
+            "⚠️ Botdan to'liq foydalanish va kinolarni yuklab olish uchun quyidagi sahifalarimizga obuna bo'ling:\n\n"
             "<i>Obuna bo'lgach, «A'zo bo'ldim / Tekshirish» tugmasini bosing.</i>"
         )
         await message.answer(
@@ -76,43 +82,80 @@ async def start_handler(message: Message, bot: Bot):
         )
 
 
+@user_router.message(Command("obuna"))
+async def test_subscription_handler(message: Message, bot: Bot):
+    """Obuna menyusini tekshirish uchun maxsus buyruq"""
+    channels = await get_channels()
+    all_channels = []
+    if getattr(config, "REQUIRED_CHANNEL", None):
+        all_channels.append((config.REQUIRED_CHANNEL, "Asosiy kanal", config.CHANNEL_URL or "https://t.me"))
+    for ch in channels:
+        all_channels.append((ch[1], ch[2], ch[3]))
+
+    await message.answer(
+        "📢 <b>Majburiy obuna sahifalarimiz:</b>\n\n"
+        "Quyidagi sahifalarga obuna bo'ling va «A'zo bo'ldim / Tekshirish» tugmasini bosing:",
+        reply_markup=get_subscription_kb(all_channels),
+        parse_mode="HTML"
+    )
+
+
 @user_router.callback_query(F.data.startswith("check_sub"))
 async def check_sub_callback(callback: CallbackQuery, bot: Bot):
     user_id = callback.from_user.id
     
     # Callback ma'lumotidan kino kodini olish
     parts = callback.data.split(":", 1)
-    movie_code = parts[1].strip() if len(parts) > 1 and parts[1].strip() != "None" else None
+    movie_code = parts[1].strip() if len(parts) > 1 and parts[1].strip() not in ["None", ""] else None
 
-    is_subscribed, unsubscribed = await check_user_subscriptions(bot, user_id)
+    # Avval telegram kanallarini tekshiramiz
+    channels = await get_channels()
+    all_channels = []
+    if getattr(config, "REQUIRED_CHANNEL", None):
+        all_channels.append((config.REQUIRED_CHANNEL, "Asosiy kanal", config.CHANNEL_URL or "https://t.me"))
+    for ch in channels:
+        all_channels.append((ch[1], ch[2], ch[3]))
 
-    if is_subscribed:
+    tg_unsubscribed = []
+    for ch_id, ch_name, invite_link in all_channels:
         try:
-            await callback.message.delete()
+            member = await bot.get_chat_member(chat_id=ch_id, user_id=user_id)
+            if member.status in ["left", "kicked"]:
+                tg_unsubscribed.append((ch_id, ch_name, invite_link))
         except Exception:
             pass
 
-        if movie_code:
-            await callback.message.answer("✅ <b>A'zoligingiz tasdiqlandi! Kino yuklanmoqda...</b>", parse_mode="HTML")
-            await send_movie_by_code(callback.message, bot, movie_code)
-        else:
-            await callback.message.answer(
-                "✅ <b>Tabriklaymiz, a'zolik tasdiqlandi!</b>\n\n"
-                "Endi kino <b>kodini yuborishingiz</b> mumkin (Masalan: <code>105</code>).",
-                parse_mode="HTML"
-            )
-    else:
-        # A'zo bo'lmaguncha qayta so'raydi va ogohlantiradi
-        await callback.answer("❌ Siz hali barcha kanallarga a'zo bo'lmadingiz! Iltimos, barcha kanallarga a'zo bo'ling.", show_alert=True)
+    if tg_unsubscribed:
+        # Telegram kanallarga hali a'zo bo'lmagan
+        await callback.answer("❌ Siz hali barcha Telegram kanallariga a'zo bo'lmadingiz!", show_alert=True)
         try:
             await callback.message.edit_text(
                 "❌ <b>Siz hali barcha kanallarga a'zo bo'lmadingiz!</b>\n\n"
-                "Iltimos, quyidagi barcha kanallarga a'zo bo'ling va so'ngra qayta tekshiring:",
-                reply_markup=get_subscription_kb(unsubscribed, movie_code=movie_code),
+                "Iltimos, quyidagi barcha sahifalarga a'zo bo'ling va so'ngra qayta tekshiring:",
+                reply_markup=get_subscription_kb(tg_unsubscribed, movie_code=movie_code),
                 parse_mode="HTML"
             )
         except Exception:
             pass
+        return
+
+    # Telegram kanallar joyida, obunani tasdiqlaymiz!
+    await set_user_subscribed(user_id, 1)
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    if movie_code:
+        await callback.message.answer("✅ <b>A'zoligingiz tasdiqlandi! Kino yuklanmoqda...</b>", parse_mode="HTML")
+        await send_movie_by_code(callback.message, bot, movie_code)
+    else:
+        await callback.message.answer(
+            "✅ <b>Tabriklaymiz, a'zolik tasdiqlandi!</b>\n\n"
+            "Endi kino <b>kodini yuborishingiz</b> mumkin (Masalan: <code>105</code>).",
+            parse_mode="HTML"
+        )
 
 
 async def send_movie_by_code(message: Message, bot: Bot, code: str):
@@ -137,7 +180,6 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
             reply_markup=get_share_movie_kb(bot_info.username, movie["code"])
         )
     except Exception:
-        # Video fayl sifatida yuborilgan bo'lsa
         try:
             await message.answer_document(
                 document=movie["file_id"],
@@ -163,7 +205,7 @@ async def code_input_handler(message: Message, bot: Bot):
 
     if not is_subscribed:
         await message.answer(
-            f"⚠️ <b>«{text}» kodli kinoni yuklab olish uchun quyidagi kanallarga obuna bo'ling:</b>\n\n"
+            f"⚠️ <b>«{text}» kodli kinoni yuklab olish uchun quyidagi sahifalarimizga obuna bo'ling:</b>\n\n"
             "<i>Obuna bo'lib, «A'zo bo'ldim / Tekshirish» tugmasini bosing. Kino avtomatik yuboriladi!</i>",
             reply_markup=get_subscription_kb(unsubscribed, movie_code=text),
             parse_mode="HTML"

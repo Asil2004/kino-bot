@@ -12,9 +12,16 @@ async def init_db():
                 user_id INTEGER PRIMARY KEY,
                 username TEXT,
                 full_name TEXT,
+                is_subscribed INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # Ustun mavjudligini tekshirish (mavjud bazalar uchun)
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN is_subscribed INTEGER DEFAULT 0")
+        except Exception:
+            pass
         
         # Movies jadvali
         await db.execute("""
@@ -51,6 +58,19 @@ async def add_user(user_id: int, username: str | None, full_name: str):
             (user_id, username, full_name)
         )
         await db.commit()
+
+
+async def set_user_subscribed(user_id: int, status: int = 1):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE users SET is_subscribed = ? WHERE user_id = ?", (status, user_id))
+        await db.commit()
+
+
+async def is_user_sub_confirmed(user_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT is_subscribed FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            return bool(row and row[0] == 1)
 
 
 async def get_all_users():
