@@ -1,13 +1,24 @@
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
+from aiogram.fsm.state import default_state
+
 from database import (
-    add_user, get_movie, get_channels, is_user_sub_confirmed, set_user_subscribed
+    add_user, get_movie, get_channels, is_user_sub_confirmed, set_user_subscribed,
+    get_episodes, get_episode
 )
-from keyboards import get_subscription_kb, get_share_movie_kb
+from keyboards import (
+    get_subscription_kb, get_share_movie_kb, get_episodes_kb, get_back_to_series_kb
+)
 import config
 
 user_router = Router()
+
+ADMIN_BUTTONS = [
+    "🎬 Bitta Film qo'shish", "📺 Serial / Anime yaratish", "➕ Serialga qism qo'shish",
+    "🗑 O'chirish", "📊 Statistika", "📋 Barcha kinolar",
+    "📢 Kanallarni boshqarish", "✉️ Xabar tarqatish", "❌ Bekor qilish"
+]
 
 
 async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list]:
@@ -15,12 +26,10 @@ async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list]:
     channels = await get_channels()
     all_channels = []
     
-    # config.py dagi statik kanal bo'lsa
     if getattr(config, "REQUIRED_CHANNEL", None):
         all_channels.append((config.REQUIRED_CHANNEL, "Asosiy kanal", config.CHANNEL_URL or "https://t.me"))
     
     for ch in channels:
-        # id, channel_id, channel_name, invite_link
         all_channels.append((ch[1], ch[2], ch[3]))
 
     unsubscribed = []
@@ -30,14 +39,11 @@ async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list]:
             if member.status in ["left", "kicked"]:
                 unsubscribed.append((ch_id, ch_name, invite_link))
         except Exception:
-            # Agar bot kanalda admin bo'lmasa yoki kanal topilmasa foydalanuvchini to'xtatmaydi
             pass
 
-    # Agar Telegram kanallardan birontasiga a'zo bo'lmasa
     if unsubscribed:
         return False, unsubscribed
 
-    # Agar Instagram ulanagan bo'lsa va foydalanuvchi hali tasdiqlamagan bo'lsa
     has_insta = bool(getattr(config, "INSTAGRAM_URL", None))
     confirmed = await is_user_sub_confirmed(user_id)
 
@@ -52,7 +58,6 @@ async def start_handler(message: Message, bot: Bot):
     user = message.from_user
     await add_user(user.id, user.username, user.full_name)
 
-    # Deep linking orqali kod kelgan bo'lsa: /start 105
     args = message.text.split(maxsplit=1)
     movie_code = args[1].strip() if len(args) > 1 else None
 
@@ -61,7 +66,7 @@ async def start_handler(message: Message, bot: Bot):
     if not is_subscribed:
         txt = (
             f"👋 <b>Assalomu alaykum, {user.first_name}!</b>\n\n"
-            "⚠️ Botdan to'liq foydalanish va kinolarni yuklab olish uchun quyidagi sahifalarimizga obuna bo'ling:\n\n"
+            "⚠️ Botdan to'liq foydalanish va kinolarni tomosha qilish uchun quyidagi sahifalarimizga obuna bo'ling:\n\n"
             "<i>Obuna bo'lgach, «A'zo bo'ldim / Tekshirish» tugmasini bosing.</i>"
         )
         await message.answer(
@@ -77,14 +82,13 @@ async def start_handler(message: Message, bot: Bot):
         await message.answer(
             f"👋 <b>Assalomu alaykum, {user.first_name}!</b>\n\n"
             "🎬 <b>Bugun kinolar botiga xush kelibsiz!</b>\n\n"
-            "🔍 Kinoni topish uchun uning <b>kodini yuboring</b> (Masalan: <code>105</code>).",
+            "🔍 Kino yoki Serialni topish uchun uning <b>kodini yuboring</b> (Masalan: <code>105</code>).",
             parse_mode="HTML"
         )
 
 
 @user_router.message(Command("obuna"))
 async def test_subscription_handler(message: Message, bot: Bot):
-    """Obuna menyusini tekshirish uchun maxsus buyruq"""
     channels = await get_channels()
     all_channels = []
     if getattr(config, "REQUIRED_CHANNEL", None):
@@ -104,11 +108,9 @@ async def test_subscription_handler(message: Message, bot: Bot):
 async def check_sub_callback(callback: CallbackQuery, bot: Bot):
     user_id = callback.from_user.id
     
-    # Callback ma'lumotidan kino kodini olish
     parts = callback.data.split(":", 1)
     movie_code = parts[1].strip() if len(parts) > 1 and parts[1].strip() not in ["None", ""] else None
 
-    # Avval telegram kanallarini tekshiramiz
     channels = await get_channels()
     all_channels = []
     if getattr(config, "REQUIRED_CHANNEL", None):
@@ -126,7 +128,6 @@ async def check_sub_callback(callback: CallbackQuery, bot: Bot):
             pass
 
     if tg_unsubscribed:
-        # Telegram kanallarga hali a'zo bo'lmagan
         await callback.answer("❌ Siz hali barcha Telegram kanallariga a'zo bo'lmadingiz!", show_alert=True)
         try:
             await callback.message.edit_text(
@@ -139,7 +140,6 @@ async def check_sub_callback(callback: CallbackQuery, bot: Bot):
             pass
         return
 
-    # Telegram kanallar joyida, obunani tasdiqlaymiz!
     await set_user_subscribed(user_id, 1)
 
     try:
@@ -153,7 +153,7 @@ async def check_sub_callback(callback: CallbackQuery, bot: Bot):
     else:
         await callback.message.answer(
             "✅ <b>Tabriklaymiz, a'zolik tasdiqlandi!</b>\n\n"
-            "Endi kino <b>kodini yuborishingiz</b> mumkin (Masalan: <code>105</code>).",
+            "Endi kino yoki serial <b>kodini yuborishingiz</b> mumkin (Masalan: <code>105</code>).",
             parse_mode="HTML"
         )
 
@@ -162,14 +162,54 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
     movie = await get_movie(code)
     if not movie:
         await message.answer(
-            f"❌ <b>{code}</b> kodli kino topilmadi!\n\n"
+            f"❌ <b>{code}</b> kodli kino yoki serial topilmadi!\n\n"
             "Iltimos, kodni to'g'ri kiritganingizni tekshiring.",
             parse_mode="HTML"
         )
         return
 
     bot_info = await bot.get_me()
-    caption = movie["caption"] or f"🎬 <b>{movie['title'] or 'Kino'}</b>\n\n🔢 Kodi: <code>{movie['code']}</code>\n👁 Ko'rishlar: {movie['views']}"
+
+    # Agar SERIAL bo'lsa (AniMakonBot kabi)
+    if movie["movie_type"] == "series":
+        episodes = await get_episodes(code)
+        
+        card_text = (
+            f"📺 <b>{movie['title']}</b>\n\n"
+            f"🔢 Serial kodi: <code>{movie['code']}</code>\n"
+            f"📅 Yili: <b>{movie['year'] or 'Mavjud emas'}</b>\n"
+            f"🎭 Janri: <b>{movie['genre'] or 'Mavjud emas'}</b>\n"
+            f"🇺🇿 Tili: <b>{movie['language']}</b>\n"
+            f"📊 Qismlar soni: <b>{len(episodes)} ta</b>\n"
+            f"👁 Ko'rishlar: <b>{movie['views']}</b>\n\n"
+        )
+        
+        if episodes:
+            card_text += "👇 <i>Qismni tomosha qilish uchun quyidagi tugmalardan birini tanlang:</i>"
+        else:
+            card_text += "⚠️ <i>Bu serialga hali qismlar yuklanmagan. Tez orada yuklanadi!</i>"
+
+        card_text += f"\n\n🤖 <b>Bizning bot:</b> @{bot_info.username}"
+
+        keyboard = get_episodes_kb(bot_info.username, movie["code"], episodes)
+
+        if movie["photo_id"]:
+            try:
+                await message.answer_photo(
+                    photo=movie["photo_id"],
+                    caption=card_text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+                return
+            except Exception:
+                pass
+
+        await message.answer(card_text, reply_markup=keyboard, parse_mode="HTML")
+        return
+
+    # Agar BITTA FILM bo'lsa
+    caption = movie["caption"] or f"🎬 <b>{movie['title']}</b>\n\n🔢 Kodi: <code>{movie['code']}</code>\n👁 Ko'rishlar: {movie['views']}"
     caption += f"\n\n🤖 <b>Bizning bot:</b> @{bot_info.username}"
 
     try:
@@ -194,20 +234,80 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
             )
 
 
-from aiogram.fsm.state import default_state
+# Qismni tomosha qilish callback-i
+@user_router.callback_query(F.data.startswith("show_ep:"))
+async def show_episode_callback(callback: CallbackQuery, bot: Bot):
+    parts = callback.data.split(":")
+    movie_code = parts[1]
+    ep_num = int(parts[2])
+
+    movie = await get_movie(movie_code)
+    ep = await get_episode(movie_code, ep_num)
+
+    if not ep:
+        await callback.answer(f"❌ {ep_num}-qism hali yuklanmagan!", show_alert=True)
+        return
+
+    bot_info = await bot.get_me()
+    title = movie["title"] if movie else "Serial"
+    caption = (
+        f"🎬 <b>{title} — {ep_num}-qism</b>\n\n"
+        f"🔢 Serial kodi: <code>{movie_code}</code>\n"
+        f"👁 Ko'rishlar: {ep['views']}\n\n"
+        f"🤖 <b>Bizning bot:</b> @{bot_info.username}"
+    )
+
+    await callback.answer(f"▶️ {ep_num}-qism yuklanmoqda...")
+
+    try:
+        await callback.message.answer_video(
+            video=ep["file_id"],
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=get_back_to_series_kb(movie_code, bot_info.username)
+        )
+    except Exception:
+        try:
+            await callback.message.answer_document(
+                document=ep["file_id"],
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=get_back_to_series_kb(movie_code, bot_info.username)
+            )
+        except Exception:
+            await callback.message.answer("⚠️ Videoni yuborishda xatolik yuz berdi.")
 
 
-ADMIN_BUTTONS = [
-    "🎬 Kino qo'shish", "🗑 Kino o'chirish", "📊 Statistika",
-    "📋 So'nggi kinolar", "📢 Kanallarni boshqarish", "✉️ Xabar tarqatish", "❌ Bekor qilish"
-]
+# Qismlar sahifasini almashtirish
+@user_router.callback_query(F.data.startswith("ep_page:"))
+async def change_episode_page_callback(callback: CallbackQuery, bot: Bot):
+    parts = callback.data.split(":")
+    movie_code = parts[1]
+    page = int(parts[2])
+
+    episodes = await get_episodes(movie_code)
+    bot_info = await bot.get_me()
+    new_kb = get_episodes_kb(bot_info.username, movie_code, episodes, page=page)
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=new_kb)
+    except Exception:
+        pass
+    await callback.answer()
+
+
+# Serial kartochkasiga qaytish
+@user_router.callback_query(F.data.startswith("show_series:"))
+async def show_series_callback(callback: CallbackQuery, bot: Bot):
+    movie_code = callback.data.split(":", 1)[1]
+    await send_movie_by_code(callback.message, bot, movie_code)
+    await callback.answer()
 
 
 @user_router.message(default_state, F.text)
 async def code_input_handler(message: Message, bot: Bot):
     text = message.text.strip()
     
-    # Agar buyruq yoki admin menyusi tugmalari bo'lsa o'tkazib yuboramiz
     if text.startswith("/") or text in ADMIN_BUTTONS:
         return
 
@@ -216,12 +316,11 @@ async def code_input_handler(message: Message, bot: Bot):
 
     if not is_subscribed:
         await message.answer(
-            f"⚠️ <b>«{text}» kodli kinoni yuklab olish uchun quyidagi sahifalarimizga obuna bo'ling:</b>\n\n"
+            f"⚠️ <b>«{text}» kodli kinoni tomosha qilish uchun quyidagi sahifalarimizga obuna bo'ling:</b>\n\n"
             "<i>Obuna bo'lib, «A'zo bo'ldim / Tekshirish» tugmasini bosing. Kino avtomatik yuboriladi!</i>",
             reply_markup=get_subscription_kb(unsubscribed, movie_code=text),
             parse_mode="HTML"
         )
         return
 
-    # Kino qidirish
     await send_movie_by_code(message, bot, text)
