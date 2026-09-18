@@ -24,13 +24,14 @@ def get_cancel_kb() -> ReplyKeyboardMarkup:
 
 
 # Majburiy obuna inline tugmalari
-def get_subscription_kb(channels: list) -> InlineKeyboardMarkup:
+def get_subscription_kb(channels: list, movie_code: str | None = None) -> InlineKeyboardMarkup:
     buttons = []
     for idx, (ch_id, ch_name, invite_link) in enumerate(channels, start=1):
         name = ch_name or f"Kanal #{idx}"
         buttons.append([InlineKeyboardButton(text=f"➕ {name}", url=invite_link)])
     
-    buttons.append([InlineKeyboardButton(text="✅ Obunani tekshirish", callback_data="check_sub")])
+    cb_data = f"check_sub:{movie_code}" if movie_code else "check_sub"
+    buttons.append([InlineKeyboardButton(text="✅ A'zo bo'ldim / Tekshirish", callback_data=cb_data)])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

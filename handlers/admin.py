@@ -283,17 +283,41 @@ async def manage_channels_handler(message: Message):
         return
 
     channels = await get_channels()
-    text = "📢 <b>Majburiy obuna kanallari ro'yxati:</b>\n\n"
+    text = "📢 <b>Majburiy obuna kanallari boshqaruvi:</b>\n\n"
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    buttons = []
 
     if channels:
+        text += "Ulangan kanallar ro'yxati:\n"
         for ch in channels:
             # id, channel_id, channel_name, invite_link
-            text += f"🆔 <code>{ch[1]}</code> | <b>{ch[2]}</b>\n🔗 {ch[3]}\n\n"
+            text += f"🔹 <b>{ch[2]}</b> (<code>{ch[1]}</code>)\n🔗 {ch[3]}\n\n"
+            buttons.append([
+                InlineKeyboardButton(text=f"🗑 {ch[2]} ni o'chirish", callback_data=f"del_channel:{ch[1]}")
+            ])
     else:
-        text += "<i>Hozircha qo'shimcha majburiy kanal ulanmagan.</i>\n\n"
+        text += "<i>Hozircha majburiy obuna uchun kanal ulanmagan.</i>\n\n"
 
-    text += "Kanal qo'shish uchun: /addchannel\nKanalni o'chirish uchun: /delchannel"
-    await message.answer(text, parse_mode="HTML")
+    buttons.append([InlineKeyboardButton(text="➕ Yangi kanal/guruh qo'shish", callback_data="add_channel_btn")])
+
+    await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+
+
+@admin_router.callback_query(F.data == "add_channel_btn")
+async def add_channel_callback(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return
+
+    await state.set_state(AddChannelState.waiting_for_id)
+    await callback.message.answer(
+        "📢 <b>Kanal yoki Guruhni ulash:</b>\n\n"
+        "Kanal username (@kanal_nomi), havolasi (https://t.me/...) yoki ID raqamini kiriting:\n\n"
+        "⚠️ <b>MUHIM:</b> Bot ushbu kanalda/guruhda <b>ADMIN</b> bo'lishi kerak, aks holda a'zolikni tekshira olmaydi!",
+        reply_markup=get_cancel_kb(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
 
 
 @admin_router.message(Command("addchannel"))
@@ -303,25 +327,60 @@ async def add_channel_start(message: Message, state: FSMContext):
 
     await state.set_state(AddChannelState.waiting_for_id)
     await message.answer(
-        "Kanal ID sini yoki @username sini kiriting (Masalan: <code>-1001234567890</code> yoki <code>@mening_kanalim</code>):\n\n"
-        "<i>Eslatma: Bot ushbu kanalda ADMIN bo'lishi kerak!</i>",
+        "📢 Kanal username (@kanal_nomi), havolasi yoki ID raqamini kiriting:\n\n"
+        "<i>Eslatma: Bot ushbu kanalda ADMIN bo'lishi shart!</i>",
         reply_markup=get_cancel_kb(),
         parse_mode="HTML"
     )
 
 
 @admin_router.message(AddChannelState.waiting_for_id, F.text)
-async def add_channel_id(message: Message, state: FSMContext):
-    await state.update_data(channel_id=message.text.strip())
+async def add_channel_id(message: Message, state: FSMContext, bot: Bot):
+    raw_input = message.text.strip()
+    
+    # Havoladan username ajratib olish (agar havola yuborilgan bo'lsa)
+    channel_id = raw_input
+    suggested_link = raw_input
+    suggested_name = "Kanal"
+
+    if "t.me/" in raw_input and not raw_input.startswith("-100"):
+        username_part = raw_input.split("t.me/")[-1].replace("+", "").replace("/", "").strip()
+        if not raw_input.startswith("https://t.me/+"):
+            channel_id = f"@{username_part}"
+        suggested_link = raw_input if raw_input.startswith("http") else f"https://{raw_input}"
+
+    # Telegram orqali kanal nomini tekshirib ko'rish
+    try:
+        chat = await bot.get_chat(channel_id)
+        suggested_name = chat.title or suggested_name
+        channel_id = str(chat.id)
+        if chat.username:
+            suggested_link = f"https://t.me/{chat.username}"
+    except Exception:
+        pass
+
+    await state.update_data(channel_id=channel_id, suggested_link=suggested_link)
     await state.set_state(AddChannelState.waiting_for_name)
-    await message.answer("Kanal nomini kiriting (Tugmada ko'rinadigan nom):")
+    await message.answer(
+        f"📝 Kanal uchun ko'rinadigan nomni kiriting (Tavsiya: <b>{suggested_name}</b>):",
+        parse_mode="HTML"
+    )
 
 
 @admin_router.message(AddChannelState.waiting_for_name, F.text)
 async def add_channel_name(message: Message, state: FSMContext):
-    await state.update_data(channel_name=message.text.strip())
+    name = message.text.strip()
+    data = await state.get_data()
+    suggested_link = data.get("suggested_link", "")
+
+    await state.update_data(channel_name=name)
     await state.set_state(AddChannelState.waiting_for_link)
-    await message.answer("Kanal havolasini kiriting (Masalan: <code>https://t.me/mening_kanalim</code>):", parse_mode="HTML")
+    
+    hint = f"\n(Masalan: <code>{suggested_link}</code>)" if suggested_link else ""
+    await message.answer(
+        f"🔗 Kanalga ulanish havolasini (link) kiriting:{hint}",
+        parse_mode="HTML"
+    )
 
 
 @admin_router.message(AddChannelState.waiting_for_link, F.text)
@@ -331,13 +390,55 @@ async def add_channel_finish(message: Message, state: FSMContext):
     ch_name = data["channel_name"]
     ch_link = message.text.strip()
 
+    if not ch_link.startswith("http"):
+        ch_link = f"https://t.me/{ch_link.replace('@', '')}"
+
     success = await add_channel(ch_id, ch_name, ch_link)
     await state.clear()
 
     if success:
-        await message.answer(f"✅ <b>{ch_name}</b> kanali obunalar ro'yxatiga qo'shildi!", reply_markup=get_admin_main_kb(), parse_mode="HTML")
+        await message.answer(
+            f"✅ <b>{ch_name}</b> kanali muvaffaqiyatli ulandi!\n\n"
+            f"🆔 ID: <code>{ch_id}</code>\n"
+            f"🔗 Link: {ch_link}\n\n"
+            f"Endi foydalanuvchilar ushbu kanalga obuna bo'lmaguncha kino yuklay olmaydi.",
+            reply_markup=get_admin_main_kb(),
+            parse_mode="HTML"
+        )
     else:
-        await message.answer("❌ Bu kanal allaqachon qo'shilgan!", reply_markup=get_admin_main_kb())
+        await message.answer("❌ Kanalni saqlashda xatolik yuz berdi!", reply_markup=get_admin_main_kb())
+
+
+@admin_router.callback_query(F.data.startswith("del_channel:"))
+async def delete_channel_callback(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+
+    ch_id = callback.data.split(":", 1)[1]
+    success = await delete_channel(ch_id)
+
+    if success:
+        await callback.answer("✅ Kanal o'chirildi!", show_alert=True)
+        # Menuni yangilash
+        channels = await get_channels()
+        text = "📢 <b>Majburiy obuna kanallari boshqaruvi:</b>\n\n"
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        buttons = []
+        if channels:
+            text += "Ulangan kanallar ro'yxati:\n"
+            for ch in channels:
+                text += f"🔹 <b>{ch[2]}</b> (<code>{ch[1]}</code>)\n🔗 {ch[3]}\n\n"
+                buttons.append([InlineKeyboardButton(text=f"🗑 {ch[2]} ni o'chirish", callback_data=f"del_channel:{ch[1]}")])
+        else:
+            text += "<i>Hozircha majburiy obuna uchun kanal ulanmagan.</i>\n\n"
+
+        buttons.append([InlineKeyboardButton(text="➕ Yangi kanal/guruh qo'shish", callback_data="add_channel_btn")])
+        try:
+            await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+        except Exception:
+            pass
+    else:
+        await callback.answer("❌ Kanal topilmadi!", show_alert=True)
 
 
 @admin_router.message(Command("delchannel"))
@@ -356,7 +457,7 @@ async def del_channel_finish(message: Message, state: FSMContext):
     await state.clear()
 
     if success:
-        await message.answer(f"✅ Kanal ({ch_id}) o'chirildi.", reply_markup=get_admin_main_kb())
+        await message.answer(f"✅ Kanal (<code>{ch_id}</code>) o'chirildi.", reply_markup=get_admin_main_kb(), parse_mode="HTML")
     else:
         await message.answer("❌ Kanal topilmadi.", reply_markup=get_admin_main_kb())
 

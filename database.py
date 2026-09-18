@@ -134,12 +134,12 @@ async def add_channel(channel_id: str, channel_name: str, invite_link: str) -> b
     try:
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
-                "INSERT INTO channels (channel_id, channel_name, invite_link) VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO channels (channel_id, channel_name, invite_link) VALUES (?, ?, ?)",
                 (channel_id.strip(), channel_name, invite_link.strip())
             )
             await db.commit()
             return True
-    except aiosqlite.IntegrityError:
+    except Exception:
         return False
 
 
