@@ -53,7 +53,13 @@ def get_subscription_kb(
         buttons.append([InlineKeyboardButton(text=insta_label, url=url)])
 
     # Telegram kanallari
-    for idx, (ch_id, ch_name, invite_link) in enumerate(channels, start=1):
+    for idx, item in enumerate(channels, start=1):
+        if len(item) == 4:
+            _, ch_id, ch_name, invite_link = item
+        elif len(item) == 3:
+            ch_id, ch_name, invite_link = item
+        else:
+            continue
         ch_name_clean = ch_name or f"Kanal #{idx}"
         buttons.append([InlineKeyboardButton(text=f"➕ {ch_name_clean}", url=invite_link)])
     
