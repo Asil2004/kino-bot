@@ -1,11 +1,12 @@
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, Command
-from aiogram.fsm.state import default_state
+from aiogram.filters import CommandStart, Command, StateFilter
+from aiogram.fsm.context import FSMContext
 
 from database import (
     add_user, get_movie, get_channels, is_user_sub_confirmed, set_user_subscribed,
-    get_episodes, get_episode, get_top_movies, get_random_movie_code, get_setting
+    get_episodes, get_episode, get_top_movies, get_random_movie_code, get_setting,
+    is_admin_user
 )
 from keyboards import (
     get_subscription_kb, get_share_movie_kb, get_episodes_kb, get_back_to_series_kb,
@@ -29,6 +30,10 @@ ADMIN_BUTTONS = [
 
 async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list, str, str]:
     """Foydalanuvchi barcha kanallarga a'zo bo'lganini va Instagram tasdiqlanganini tekshiradi."""
+    # Agar admin bo'lsa, unga HECH QACHON majburiy obuna chiqmaydi
+    if await is_admin_user(user_id):
+        return True, [], "", ""
+
     channels = await get_channels()
     all_channels = []
     
@@ -66,7 +71,7 @@ async def start_handler(message: Message, bot: Bot):
     user = message.from_user
     await add_user(user.id, user.username, user.full_name)
 
-    is_admin = user.id in config.ADMINS
+    is_admin = await is_admin_user(user.id)
     args = message.text.split(maxsplit=1)
     movie_code = args[1].strip() if len(args) > 1 else None
 
@@ -104,7 +109,7 @@ async def start_handler(message: Message, bot: Bot):
 
 @user_router.message(F.text.in_(["🏠 Asosiy menyu", "/menu"]))
 async def home_menu_handler(message: Message):
-    is_admin = message.from_user.id in config.ADMINS
+    is_admin = await is_admin_user(message.from_user.id)
     await message.answer(
         "🏠 <b>Asosiy menyu:</b>\nKerakli bo'limni tanlang yoki kino kodini yuboring:",
         reply_markup=get_user_main_kb(is_admin=is_admin),
@@ -170,7 +175,7 @@ async def test_subscription_handler(message: Message, bot: Bot):
 
 @user_router.message(F.text == "👑 Admin Panel")
 async def admin_button_handler(message: Message):
-    if message.from_user.id in config.ADMINS:
+    if await is_admin_user(message.from_user.id):
         await message.answer("👑 <b>Admin boshqaruv paneli:</b>", reply_markup=get_admin_main_kb(), parse_mode="HTML")
 
 
@@ -179,7 +184,7 @@ async def admin_button_handler(message: Message):
 @user_router.callback_query(F.data.startswith("check_sub"))
 async def check_sub_callback(callback: CallbackQuery, bot: Bot):
     user_id = callback.from_user.id
-    is_admin = user_id in config.ADMINS
+    is_admin = await is_admin_user(user_id)
 
     parts = callback.data.split(":", 1)
     movie_code = parts[1].strip() if len(parts) > 1 and parts[1].strip() not in ["None", ""] else None
@@ -203,7 +208,7 @@ async def check_sub_callback(callback: CallbackQuery, bot: Bot):
     insta_url = await get_setting("INSTAGRAM_URL", getattr(config, "INSTAGRAM_URL", ""))
     insta_name = await get_setting("INSTAGRAM_NAME", getattr(config, "INSTAGRAM_NAME", ""))
 
-    if tg_unsubscribed:
+    if tg_unsubscribed and not is_admin:
         await callback.answer("❌ Siz hali barcha Telegram kanallariga a'zo bo'lmadingiz!", show_alert=True)
         try:
             await callback.message.edit_text(
@@ -227,7 +232,6 @@ async def check_sub_callback(callback: CallbackQuery, bot: Bot):
         pass
 
     if movie_code:
-        await callback.message.answer("✅ <b>A'zoligingiz tasdiqlandi! Kino yuklanmoqda...</b>", parse_mode="HTML")
         await send_movie_by_code(callback.message, bot, movie_code)
     else:
         await callback.message.answer(
@@ -289,8 +293,7 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
         return
 
     # Agar BITTA FILM bo'lsa
-    caption = movie["caption"] or f"🎬 <b>{movie['title']}</b>\n\n🔢 Kodi: <code>{movie['code']}</code>\n👁 Ko'rishlar: {movie['views']}"
-    caption += f"\n\n🤖 <b>Bizning bot:</b> @{bot_info.username}"
+    caption = f"🎬 <b>{movie['title']}</b>\n\n🔢 Kino kodi: <code>{movie['code']}</code>\n👁 Ko'rishlar: {movie['views']}\n\n🤖 <b>Bizning bot:</b> @{bot_info.username}"
 
     try:
         await message.answer_video(
@@ -381,8 +384,13 @@ async def show_series_callback(callback: CallbackQuery, bot: Bot):
     await callback.answer()
 
 
-@user_router.message(default_state, F.text)
-async def code_input_handler(message: Message, bot: Bot):
+@user_router.message(StateFilter(None), F.text)
+async def code_input_handler(message: Message, state: FSMContext, bot: Bot):
+    # Agar admin yoki foydalanuvchi biror FSM holatida (wizardda) bo'lsa kino qidirmaymiz
+    cur_state = await state.get_state()
+    if cur_state is not None:
+        return
+
     text = message.text.strip()
     
     if text.startswith("/") or text in USER_MENU_BUTTONS or text in ADMIN_BUTTONS:

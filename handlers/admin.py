@@ -242,15 +242,9 @@ async def process_single_title(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     file_id = data["file_id"]
     code = data["code"]
-    caption = data.get("caption", "")
 
-    if not caption:
-        bot_info = await bot.get_me()
-        caption = (
-            f"🎬 <b>{title}</b>\n\n"
-            f"🔢 Kino kodi: <code>{code}</code>\n"
-            f"🤖 Bot: @{bot_info.username}"
-        )
+    bot_info = await bot.get_me()
+    caption = f"🎬 <b>{title}</b>\n\n🔢 Kino kodi: <code>{code}</code>\n\n🤖 <b>Bizning bot:</b> @{bot_info.username}"
 
     success = await add_movie(
         code=code, file_id=file_id, title=title, 
