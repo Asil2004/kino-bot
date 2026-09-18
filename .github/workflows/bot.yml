@@ -1,0 +1,36 @@
+name: Telegram Kino Bot 24/7
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+  schedule:
+    # Har 5 soatda qayta tekshirish va ishga tushirish (GitHub Actions 6 soatlik limitidan oshmaslik uchun)
+    - cron: '0 */5 * * *'
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repositoriyani yuklab olish
+        uses: actions/checkout@v4
+
+      - name: Python o'rnatish
+        uses: setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Kutubxonalarni o'rnatish
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Botni ishga tushirish
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMINS: ${{ secrets.ADMINS }}
+          REQUIRED_CHANNEL: ${{ secrets.REQUIRED_CHANNEL }}
+          CHANNEL_URL: ${{ secrets.CHANNEL_URL }}
+        run: |
+          python bot.py
