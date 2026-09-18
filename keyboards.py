@@ -2,6 +2,18 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 import config
 
 
+# Foydalanuvchi Asosiy Menyu paneli
+def get_user_main_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    keyboard = [
+        [KeyboardButton(text="🔍 Kino qidirish"), KeyboardButton(text="🔥 TOP Kinolar")],
+        [KeyboardButton(text="🎲 Tasodifiy Film"), KeyboardButton(text="📢 Homiy Sahifalar")],
+    ]
+    if is_admin:
+        keyboard.append([KeyboardButton(text="👑 Admin Panel")])
+        
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
 # Admin asosiy menyusi
 def get_admin_main_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
@@ -10,6 +22,7 @@ def get_admin_main_kb() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="➕ Serialga qism qo'shish"), KeyboardButton(text="🗑 O'chirish")],
             [KeyboardButton(text="📊 Statistika"), KeyboardButton(text="📋 Barcha kinolar")],
             [KeyboardButton(text="📢 Kanallarni boshqarish"), KeyboardButton(text="✉️ Xabar tarqatish")],
+            [KeyboardButton(text="🏠 Asosiy menyu")],
         ],
         resize_keyboard=True
     )

@@ -5,14 +5,20 @@ from aiogram.fsm.state import default_state
 
 from database import (
     add_user, get_movie, get_channels, is_user_sub_confirmed, set_user_subscribed,
-    get_episodes, get_episode
+    get_episodes, get_episode, get_top_movies, get_random_movie_code
 )
 from keyboards import (
-    get_subscription_kb, get_share_movie_kb, get_episodes_kb, get_back_to_series_kb
+    get_subscription_kb, get_share_movie_kb, get_episodes_kb, get_back_to_series_kb,
+    get_user_main_kb, get_admin_main_kb
 )
 import config
 
 user_router = Router()
+
+USER_MENU_BUTTONS = [
+    "🔍 Kino qidirish", "🔥 TOP Kinolar", "🎲 Tasodifiy Film", 
+    "📢 Homiy Sahifalar", "👑 Admin Panel", "🏠 Asosiy menyu"
+]
 
 ADMIN_BUTTONS = [
     "🎬 Bitta Film qo'shish", "📺 Serial yaratish", "➕ Serialga qism qo'shish",
@@ -58,6 +64,7 @@ async def start_handler(message: Message, bot: Bot):
     user = message.from_user
     await add_user(user.id, user.username, user.full_name)
 
+    is_admin = user.id in config.ADMINS
     args = message.text.split(maxsplit=1)
     movie_code = args[1].strip() if len(args) > 1 else None
 
@@ -82,12 +89,61 @@ async def start_handler(message: Message, bot: Bot):
         await message.answer(
             f"👋 <b>Assalomu alaykum, {user.first_name}!</b>\n\n"
             "🎬 <b>Bugun kinolar botiga xush kelibsiz!</b>\n\n"
-            "🔍 Kino yoki Serialni topish uchun uning <b>kodini yuboring</b> (Masalan: <code>105</code>).",
+            "🔍 Kinoni topish uchun uning <b>kodini yuboring</b> yoki menyudan kerakli bo'limni tanlang.",
+            reply_markup=get_user_main_kb(is_admin=is_admin),
             parse_mode="HTML"
         )
 
 
-@user_router.message(Command("obuna"))
+# ==================== ASOSIY MENYU BUYRUQLARI ====================
+
+@user_router.message(F.text.in_(["🏠 Asosiy menyu", "/menu"]))
+async def home_menu_handler(message: Message):
+    is_admin = message.from_user.id in config.ADMINS
+    await message.answer(
+        "🏠 <b>Asosiy menyu:</b>\nKerakli bo'limni tanlang yoki kino kodini yuboring:",
+        reply_markup=get_user_main_kb(is_admin=is_admin),
+        parse_mode="HTML"
+    )
+
+
+@user_router.message(F.text == "🔍 Kino qidirish")
+async def search_hint_handler(message: Message):
+    await message.answer(
+        "🔍 <b>Kino yoki Serialni topish:</b>\n\n"
+        "Iltimos, tomosha qilmoqchi bo'lgan filmingiz yoki serialingiz <b>kodini yuboring</b> (Masalan: <code>105</code>).",
+        parse_mode="HTML"
+    )
+
+
+@user_router.message(F.text.in_(["🔥 TOP Kinolar", "/top"]))
+async def top_movies_handler(message: Message):
+    movies = await get_top_movies(limit=10)
+    if not movies:
+        await message.answer("Bazaga hali kinolar qo'shilmagan.")
+        return
+
+    text = "🔥 <b>Eng ko'p ko'rilgan TOP Kinolar va Seriallar:</b>\n\n"
+    for idx, (code, title, m_type, views) in enumerate(movies, start=1):
+        icon = "📺" if m_type == "series" else "🎬"
+        text += f"{idx}. {icon} <b>{title}</b>\n   🔢 Kodi: <code>{code}</code> (👁 {views} marta ko'rilgan)\n\n"
+
+    text += "<i>Kinoni tomosha qilish uchun uning kodini botga yuboring!</i>"
+    await message.answer(text, parse_mode="HTML")
+
+
+@user_router.message(F.text.in_(["🎲 Tasodifiy Film", "/tasodifiy"]))
+async def random_movie_handler(message: Message, bot: Bot):
+    code = await get_random_movie_code()
+    if not code:
+        await message.answer("Bazaga hali kino qo'shilmagan.")
+        return
+
+    await message.answer("🎲 <b>Siz uchun tasodifiy film tanlandi:</b>", parse_mode="HTML")
+    await send_movie_by_code(message, bot, code)
+
+
+@user_router.message(F.text.in_(["📢 Homiy Sahifalar", "/obuna"]))
 async def test_subscription_handler(message: Message, bot: Bot):
     channels = await get_channels()
     all_channels = []
@@ -97,17 +153,26 @@ async def test_subscription_handler(message: Message, bot: Bot):
         all_channels.append((ch[1], ch[2], ch[3]))
 
     await message.answer(
-        "📢 <b>Majburiy obuna sahifalarimiz:</b>\n\n"
-        "Quyidagi sahifalarga obuna bo'ling va «A'zo bo'ldim / Tekshirish» tugmasini bosing:",
+        "📢 <b>Bizning rasmiy homiy sahifalarimiz:</b>\n\n"
+        "Quyidagi sahifalarga obuna bo'ling:",
         reply_markup=get_subscription_kb(all_channels),
         parse_mode="HTML"
     )
 
 
+@user_router.message(F.text == "👑 Admin Panel")
+async def admin_button_handler(message: Message):
+    if message.from_user.id in config.ADMINS:
+        await message.answer("👑 <b>Admin boshqaruv paneli:</b>", reply_markup=get_admin_main_kb(), parse_mode="HTML")
+
+
+# ==================== OBUNA CALLBACK ====================
+
 @user_router.callback_query(F.data.startswith("check_sub"))
 async def check_sub_callback(callback: CallbackQuery, bot: Bot):
     user_id = callback.from_user.id
-    
+    is_admin = user_id in config.ADMINS
+
     parts = callback.data.split(":", 1)
     movie_code = parts[1].strip() if len(parts) > 1 and parts[1].strip() not in ["None", ""] else None
 
@@ -154,6 +219,7 @@ async def check_sub_callback(callback: CallbackQuery, bot: Bot):
         await callback.message.answer(
             "✅ <b>Tabriklaymiz, a'zolik tasdiqlandi!</b>\n\n"
             "Endi kino yoki serial <b>kodini yuborishingiz</b> mumkin (Masalan: <code>105</code>).",
+            reply_markup=get_user_main_kb(is_admin=is_admin),
             parse_mode="HTML"
         )
 
@@ -170,7 +236,7 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
 
     bot_info = await bot.get_me()
 
-    # Agar SERIAL bo'lsa (AniMakonBot kabi)
+    # Agar SERIAL bo'lsa
     if movie["movie_type"] == "series":
         episodes = await get_episodes(code)
         
@@ -234,7 +300,6 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
             )
 
 
-# Qismni tomosha qilish callback-i
 @user_router.callback_query(F.data.startswith("show_ep:"))
 async def show_episode_callback(callback: CallbackQuery, bot: Bot):
     parts = callback.data.split(":")
@@ -278,7 +343,6 @@ async def show_episode_callback(callback: CallbackQuery, bot: Bot):
             await callback.message.answer("⚠️ Videoni yuborishda xatolik yuz berdi.")
 
 
-# Qismlar sahifasini almashtirish
 @user_router.callback_query(F.data.startswith("ep_page:"))
 async def change_episode_page_callback(callback: CallbackQuery, bot: Bot):
     parts = callback.data.split(":")
@@ -296,7 +360,6 @@ async def change_episode_page_callback(callback: CallbackQuery, bot: Bot):
     await callback.answer()
 
 
-# Serial kartochkasiga qaytish
 @user_router.callback_query(F.data.startswith("show_series:"))
 async def show_series_callback(callback: CallbackQuery, bot: Bot):
     movie_code = callback.data.split(":", 1)[1]
@@ -308,7 +371,7 @@ async def show_series_callback(callback: CallbackQuery, bot: Bot):
 async def code_input_handler(message: Message, bot: Bot):
     text = message.text.strip()
     
-    if text.startswith("/") or text in ADMIN_BUTTONS:
+    if text.startswith("/") or text in USER_MENU_BUTTONS or text in ADMIN_BUTTONS:
         return
 
     user_id = message.from_user.id

@@ -196,6 +196,24 @@ async def get_recent_movies(limit: int = 15):
             return await cursor.fetchall()
 
 
+async def get_top_movies(limit: int = 10):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT code, title, movie_type, views FROM movies ORDER BY views DESC LIMIT ?",
+            (limit,)
+        ) as cursor:
+            return await cursor.fetchall()
+
+
+async def get_random_movie_code():
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT code FROM movies ORDER BY RANDOM() LIMIT 1"
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+
 # ==================== QISMLAR (EPISODES) ====================
 
 async def add_episode(movie_code: str, episode_number: int, file_id: str, title: str = "") -> bool:

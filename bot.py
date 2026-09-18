@@ -37,6 +37,19 @@ async def main():
     dp.include_router(admin_router)
     dp.include_router(user_router)
 
+    from aiogram.types import BotCommand
+    commands = [
+        BotCommand(command="start", description="🚀 Botni ishga tushirish"),
+        BotCommand(command="top", description="🔥 TOP kinolar va seriallar"),
+        BotCommand(command="tasodifiy", description="🎲 Tasodifiy film"),
+        BotCommand(command="obuna", description="📢 Homiy sahifalarimiz"),
+        BotCommand(command="admin", description="👑 Admin panel"),
+    ]
+    try:
+        await bot.set_my_commands(commands)
+    except Exception:
+        pass
+
     logging.info("Bot muvaffaqiyatli ishga tushirildi!")
     
     # Eski yangilanishlarni o'chirib, yangilarini qabul qilish
