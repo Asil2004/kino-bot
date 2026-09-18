@@ -87,6 +87,68 @@ async def cancel_handler(message: Message, state: FSMContext):
     await message.answer("✅ Amal bekor qilindi.", reply_markup=get_admin_main_kb())
 
 
+from aiogram.fsm.state import default_state
+
+
+# Admin to'g'ridan-to'g'ri video yoki fayl yuborganida (istalgan payt)
+@admin_router.message(default_state, F.video | F.document | F.animation | F.audio)
+async def direct_media_upload_handler(message: Message, state: FSMContext, bot: Bot):
+    if not is_admin(message.from_user.id):
+        return
+
+    caption = message.caption or ""
+
+    # Agar izohida /add 105 Forsaj 10 bo'lsa
+    if caption.startswith("/add "):
+        parts = caption.split(maxsplit=2)
+        if len(parts) >= 3:
+            code = parts[1].strip()
+            title = parts[2].strip()
+            file_id = message.video.file_id if message.video else message.document.file_id
+            bot_info = await bot.get_me()
+            c_text = f"🎬 <b>{title}</b>\n\n🔢 Kino kodi: <code>{code}</code>\n\n🤖 Bot: @{bot_info.username}"
+            success = await add_movie(code=code, file_id=file_id, title=title, movie_type="single", caption=c_text)
+            if success:
+                await message.answer(
+                    f"✅ <b>Kino muvaffaqiyatli saqlandi!</b>\n\n🎬 Nomi: <b>{title}</b>\n🔢 Kodi: <code>{code}</code>\n🔗 Havola: https://t.me/{bot_info.username}?start={code}",
+                    reply_markup=get_admin_main_kb(),
+                    parse_mode="HTML"
+                )
+                return
+
+    # Agar izohida /addpart 205 1 bo'lsa
+    if caption.startswith("/addpart "):
+        parts = caption.split()
+        if len(parts) >= 3 and parts[2].isdigit():
+            code = parts[1].strip()
+            ep_num = int(parts[2])
+            file_id = message.video.file_id if message.video else message.document.file_id
+            success = await add_episode(movie_code=code, episode_number=ep_num, file_id=file_id)
+            if success:
+                await message.answer(f"✅ <code>{code}</code> serialiga <b>{ep_num}-qism</b> muvaffaqiyatli qo'shildi!", reply_markup=get_admin_main_kb(), parse_mode="HTML")
+                return
+
+    file_id = None
+    if message.video:
+        file_id = message.video.file_id
+    elif message.document:
+        file_id = message.document.file_id
+    elif message.animation:
+        file_id = message.animation.file_id
+    elif message.audio:
+        file_id = message.audio.file_id
+
+    await state.update_data(file_id=file_id, caption=caption)
+    await state.set_state(AddSingleMovieState.waiting_for_code)
+
+    await message.answer(
+        "📹 <b>Video / Fayl qabul qilindi!</b>\n\n"
+        "🔢 Ushbu kino uchun <b>noyob kod</b> kiriting (Masalan: <code>101</code>):",
+        reply_markup=get_cancel_kb(),
+        parse_mode="HTML"
+    )
+
+
 # ==================== BITTA FILM QO'SHISH ====================
 
 @admin_router.message(F.text == "🎬 Bitta Film qo'shish")
@@ -102,9 +164,18 @@ async def start_add_single(message: Message, state: FSMContext):
     )
 
 
-@admin_router.message(AddSingleMovieState.waiting_for_video, F.video | F.document)
+@admin_router.message(AddSingleMovieState.waiting_for_video, F.video | F.document | F.animation | F.audio)
 async def process_single_video(message: Message, state: FSMContext):
-    file_id = message.video.file_id if message.video else message.document.file_id
+    file_id = None
+    if message.video:
+        file_id = message.video.file_id
+    elif message.document:
+        file_id = message.document.file_id
+    elif message.animation:
+        file_id = message.animation.file_id
+    elif message.audio:
+        file_id = message.audio.file_id
+
     caption = message.caption or ""
 
     await state.update_data(file_id=file_id, caption=caption)
@@ -306,9 +377,18 @@ async def process_episode_num(message: Message, state: FSMContext):
     await message.answer(f"📹 <b>{text}-qism</b> videosini yoki faylini yuboring:", parse_mode="HTML")
 
 
-@admin_router.message(AddEpisodeState.waiting_for_video, F.video | F.document)
+@admin_router.message(AddEpisodeState.waiting_for_video, F.video | F.document | F.animation | F.audio)
 async def process_episode_video(message: Message, state: FSMContext):
-    file_id = message.video.file_id if message.video else message.document.file_id
+    file_id = None
+    if message.video:
+        file_id = message.video.file_id
+    elif message.document:
+        file_id = message.document.file_id
+    elif message.animation:
+        file_id = message.animation.file_id
+    elif message.audio:
+        file_id = message.audio.file_id
+
     data = await state.get_data()
     movie_code = data["movie_code"]
     movie_title = data["movie_title"]
