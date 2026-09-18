@@ -77,16 +77,22 @@ async def start_add_movie(message: Message, state: FSMContext):
 
     await state.set_state(AddMovieState.waiting_for_video)
     await message.answer(
-        "📹 Iltimos, kino <b>videosini</b> yuboring:",
+        "📹 Iltimos, kino <b>videosini</b> yoki <b>faylini</b> yuboring:",
         reply_markup=get_cancel_kb(),
         parse_mode="HTML"
     )
 
 
-@admin_router.message(AddMovieState.waiting_for_video, F.video)
+@admin_router.message(AddMovieState.waiting_for_video, F.video | F.document)
 async def process_movie_video(message: Message, state: FSMContext):
-    video = message.video
-    file_id = video.file_id
+    if message.video:
+        file_id = message.video.file_id
+    elif message.document:
+        file_id = message.document.file_id
+    else:
+        await message.answer("Iltimos, video yoki video fayl yuboring!")
+        return
+
     caption = message.caption or ""
 
     await state.update_data(file_id=file_id, caption=caption)
@@ -133,7 +139,7 @@ async def process_movie_title(message: Message, state: FSMContext, bot: Bot):
         bot_info = await bot.get_me()
         await message.answer(
             f"✅ <b>Kino muvaffaqiyatli saqlandi!</b>\n\n"
-            f"🎬 Nomi: {title}\n"
+            f"🎬 Nomi: <b>{title}</b>\n"
             f"🔢 Kodi: <code>{code}</code>\n"
             f"🔗 Havola: https://t.me/{bot_info.username}?start={code}",
             reply_markup=get_admin_main_kb(),
@@ -143,6 +149,66 @@ async def process_movie_title(message: Message, state: FSMContext, bot: Bot):
         await message.answer(
             f"❌ <b>Xatolik:</b> <code>{code}</code> kodli kino allaqachon mavjud! Boshqa kod bilan urinib ko'ring.",
             reply_markup=get_admin_main_kb(),
+            parse_mode="HTML"
+        )
+
+
+# Tezkor kino qo'shish buyrug'i: /add <kod> <nomi> (video bilan birga yoki videoga reply qilib)
+@admin_router.message(Command("add"))
+async def quick_add_movie(message: Message, bot: Bot):
+    if not is_admin(message.from_user.id):
+        return
+
+    # Reply yoki video xabar tekshiruvi
+    file_id = None
+    if message.video:
+        file_id = message.video.file_id
+    elif message.document:
+        file_id = message.document.file_id
+    elif message.reply_to_message:
+        if message.reply_to_message.video:
+            file_id = message.reply_to_message.video.file_id
+        elif message.reply_to_message.document:
+            file_id = message.reply_to_message.document.file_id
+
+    if not file_id:
+        await message.answer(
+            "ℹ️ <b>Tezkor kino qo'shish:</b>\n"
+            "Videoni yuborayotganda izohiga (caption) <code>/add 105 Forsaj 10</code> deb yozing yoki videoga javob (reply) tarzida <code>/add 105 Forsaj 10</code> buyrug'ini yuboring.",
+            parse_mode="HTML"
+        )
+        return
+
+    parts = message.text.split(maxsplit=2) if message.text else []
+    if len(parts) < 3:
+        await message.answer(
+            "⚠️ Format noto'g'ri!\nFormat: <code>/add [kod] [kino nomi]</code>\nMasalan: <code>/add 105 Forsaj 10</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    code = parts[1].strip()
+    title = parts[2].strip()
+
+    bot_info = await bot.get_me()
+    caption = (
+        f"🎬 <b>{title}</b>\n\n"
+        f"🔢 Kino kodi: <code>{code}</code>\n\n"
+        f"🤖 Bot: @{bot_info.username}"
+    )
+
+    success = await add_movie(code=code, file_id=file_id, title=title, caption=caption)
+    if success:
+        await message.answer(
+            f"✅ <b>Kino muvaffaqiyatli saqlandi!</b>\n\n"
+            f"🎬 Nomi: <b>{title}</b>\n"
+            f"🔢 Kodi: <code>{code}</code>\n"
+            f"🔗 Havola: https://t.me/{bot_info.username}?start={code}",
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer(
+            f"❌ <b>Xatolik:</b> <code>{code}</code> kodli kino allaqachon mavjud!",
             parse_mode="HTML"
         )
 
