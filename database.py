@@ -103,7 +103,10 @@ async def add_user(user_id: int, username: str | None, full_name: str):
 
 async def set_user_subscribed(user_id: int, status: int = 1):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE users SET is_subscribed = ? WHERE user_id = ?", (status, user_id))
+        await db.execute(
+            "INSERT INTO users (user_id, is_subscribed) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET is_subscribed = ?",
+            (user_id, status, status)
+        )
         await db.commit()
 
 

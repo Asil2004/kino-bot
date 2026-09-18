@@ -208,6 +208,7 @@ async def admin_button_handler(message: Message):
 @user_router.callback_query(F.data.startswith("check_sub"))
 async def check_sub_callback(callback: CallbackQuery, bot: Bot):
     user_id = callback.from_user.id
+    await add_user(user_id, callback.from_user.username, callback.from_user.full_name)
     is_admin = await is_admin_user(user_id)
 
     parts = callback.data.split(":", 1)
@@ -424,6 +425,7 @@ async def code_input_handler(message: Message, state: FSMContext, bot: Bot):
         return
 
     user_id = message.from_user.id
+    await add_user(user_id, message.from_user.username, message.from_user.full_name)
     is_admin = await is_admin_user(user_id)
 
     # Agar foydalanuvchi ADMIN bo'lsa, u kino qidirmaydi (adminga xato bermasdan admin panel ko'rsatiladi)
