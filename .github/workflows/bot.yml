@@ -5,12 +5,13 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
   schedule:
-    # Har 5 soatda qayta tekshirish va ishga tushirish (GitHub Actions 6 soatlik limitidan oshmaslik uchun)
+    # Har 5 soatda qayta ishga tushirish (GitHub Actions 6 soatlik limitidan oldin avtomatik yangilanadi)
     - cron: '0 */5 * * *'
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 340 # 5 soat 40 daqiqa davomida uzluksiz ishlaydi
     steps:
       - name: Repositoriyani yuklab olish
         uses: actions/checkout@v4
@@ -26,11 +27,12 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Botni ishga tushirish
+      - name: Botni 24/7 ishga tushirish
         env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          ADMINS: ${{ secrets.ADMINS }}
-          REQUIRED_CHANNEL: ${{ secrets.REQUIRED_CHANNEL }}
-          CHANNEL_URL: ${{ secrets.CHANNEL_URL }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN || '8970096817:AAHSNn7uriH_mMCeWjgvvLoh1sYBV39SSAQ' }}
+          ADMINS: ${{ secrets.ADMINS || '7747943559' }}
+          REQUIRED_CHANNEL: ${{ secrets.REQUIRED_CHANNEL || '' }}
+          CHANNEL_URL: ${{ secrets.CHANNEL_URL || '' }}
         run: |
+          echo "🚀 Bot ishga tushirilmoqda..."
           python bot.py
