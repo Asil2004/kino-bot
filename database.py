@@ -90,6 +90,32 @@ async def init_db():
         await db.commit()
 
 
+import subprocess
+import asyncio
+
+_sync_lock = asyncio.Lock()
+
+async def trigger_db_sync():
+    """Bazada yangi kino yoki o'zgarish bo'lganda avtomatik GitHubga sync qiladi."""
+    def _do_sync():
+        try:
+            subprocess.run(["git", "config", "--global", "user.name", "github-actions[bot]"], capture_output=True)
+            subprocess.run(["git", "config", "--global", "user.email", "github-actions[bot]@users.noreply.github.com"], capture_output=True)
+            subprocess.run(["git", "add", "bot.db"], capture_output=True)
+            res = subprocess.run(["git", "diff", "--staged", "--quiet"])
+            if res.returncode != 0:
+                subprocess.run(["git", "commit", "-m", "chore(db): auto-persist bot.db [skip ci]"], capture_output=True)
+                subprocess.run(["git", "push", "origin", "main"], capture_output=True)
+        except Exception:
+            pass
+
+    try:
+        async with _sync_lock:
+            await asyncio.to_thread(_do_sync)
+    except Exception:
+        pass
+
+
 # ==================== FOYDALANUVCHILAR ====================
 
 async def add_user(user_id: int, username: str | None, full_name: str):
@@ -108,6 +134,7 @@ async def set_user_subscribed(user_id: int, status: int = 1):
             (user_id, status, status)
         )
         await db.commit()
+    asyncio.create_task(trigger_db_sync())
 
 
 async def is_user_sub_confirmed(user_id: int) -> bool:
@@ -149,7 +176,8 @@ async def add_movie(
                 (code.strip(), title.strip(), movie_type, year, genre, language, photo_id, file_id, caption)
             )
             await db.commit()
-            return True
+        asyncio.create_task(trigger_db_sync())
+        return True
     except Exception:
         return False
 
@@ -189,7 +217,10 @@ async def delete_movie(code: str) -> bool:
         await db.execute("DELETE FROM episodes WHERE movie_code = ?", (code.strip(),))
         cursor = await db.execute("DELETE FROM movies WHERE code = ?", (code.strip(),))
         await db.commit()
-        return cursor.rowcount > 0
+        success = cursor.rowcount > 0
+    if success:
+        asyncio.create_task(trigger_db_sync())
+    return success
 
 
 async def count_movies() -> int:
@@ -239,7 +270,8 @@ async def add_episode(movie_code: str, episode_number: int, file_id: str, title:
                 (movie_code.strip(), int(episode_number), file_id, title.strip())
             )
             await db.commit()
-            return True
+        asyncio.create_task(trigger_db_sync())
+        return True
     except Exception:
         return False
 
@@ -287,7 +319,10 @@ async def delete_episode(movie_code: str, episode_number: int) -> bool:
             (movie_code.strip(), int(episode_number))
         )
         await db.commit()
-        return cursor.rowcount > 0
+        success = cursor.rowcount > 0
+    if success:
+        asyncio.create_task(trigger_db_sync())
+    return success
 
 
 # ==================== SOZLAMALAR ====================
@@ -299,6 +334,7 @@ async def set_setting(key: str, value: str):
             (key.strip(), value.strip())
         )
         await db.commit()
+    asyncio.create_task(trigger_db_sync())
 
 
 async def get_setting(key: str, default: str = "") -> str:
@@ -339,7 +375,8 @@ async def add_channel(channel_id: str, channel_name: str, invite_link: str) -> b
                 (channel_id.strip(), channel_name, invite_link.strip())
             )
             await db.commit()
-            return True
+        asyncio.create_task(trigger_db_sync())
+        return True
     except Exception:
         return False
 
@@ -354,4 +391,7 @@ async def delete_channel(channel_id: str) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute("DELETE FROM channels WHERE channel_id = ?", (channel_id.strip(),))
         await db.commit()
-        return cursor.rowcount > 0
+        success = cursor.rowcount > 0
+    if success:
+        asyncio.create_task(trigger_db_sync())
+    return success
