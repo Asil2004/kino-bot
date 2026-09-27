@@ -271,12 +271,20 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
     is_admin = await is_admin_user(message.from_user.id)
     movie = await get_movie(code)
     if not movie:
-        await message.answer(
-            f"❌ <b>{code}</b> kodli kino yoki serial topilmadi!\n\n"
-            "Iltimos, kodni to'g'ri kiritganingizni tekshiring.",
-            reply_markup=get_user_main_kb(is_admin=is_admin),
-            parse_mode="HTML"
-        )
+        if is_admin:
+            await message.answer(
+                f"❌ <b>{code}</b> kodli kino yoki serial topilmadi!\n\n"
+                "📹 <i>Kino yuklash uchun videoni botga yuboring yoki quyidagi admin paneldan foydalaning:</i>",
+                reply_markup=get_admin_main_kb(),
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer(
+                f"❌ <b>{code}</b> kodli kino yoki serial topilmadi!\n\n"
+                "Iltimos, kodni to'g'ri kiritganingizni tekshiring.",
+                reply_markup=get_user_main_kb(is_admin=False),
+                parse_mode="HTML"
+            )
         return
 
     bot_info = await bot.get_me()
@@ -428,23 +436,13 @@ async def code_input_handler(message: Message, state: FSMContext, bot: Bot):
     await add_user(user_id, message.from_user.username, message.from_user.full_name)
     is_admin = await is_admin_user(user_id)
 
-    # Agar foydalanuvchi ADMIN bo'lsa, u kino qidirmaydi (adminga xato bermasdan admin panel ko'rsatiladi)
-    if is_admin:
-        await message.answer(
-            "👑 <b>Admin boshqaruv paneli:</b>\n\n"
-            "Kino yoki serial yuklash, o'chirish yoki sozlamalar uchun quyidagi tugmalardan birini tanlang:\n\n"
-            "📹 <i>Shuningdek, istalgan video yoki faylni botga tashlasangiz, avtomatik kino sifatida yuklanadi!</i>",
-            reply_markup=get_admin_main_kb(),
-            parse_mode="HTML"
-        )
-        return
-
     # Agar salomlashish yoki umumiy so'z bo'lsa, xush kelibsiz xabarini chiqaramiz
     if text.lower() in GREETING_WORDS:
+        kb = get_admin_main_kb() if is_admin else get_user_main_kb(is_admin=False)
         await message.answer(
             f"👋 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
-            "🔍 Kinoni tomosha qilish uchun uning <b>kodini yuboring</b> (Masalan: <code>105</code>) yoki quyidagi menyudan foydalaning.",
-            reply_markup=get_user_main_kb(is_admin=is_admin),
+            "🔍 Kinoni tomosha qilish uchun uning <b>kodini yuboring</b> (Masalan: <code>111</code>) yoki quyidagi menyudan foydalaning.",
+            reply_markup=kb,
             parse_mode="HTML"
         )
         return
