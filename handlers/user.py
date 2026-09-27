@@ -287,7 +287,8 @@ async def check_sub_callback(callback: CallbackQuery, bot: Bot):
 
 
 async def send_movie_by_code(message: Message, bot: Bot, code: str):
-    is_admin = await is_admin_user(message.from_user.id)
+    user_id = message.from_user.id if message.from_user else 0
+    is_admin = await is_admin_user(user_id)
     movie = await get_movie(code)
     if not movie:
         if is_admin:
@@ -299,7 +300,7 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
             )
         else:
             await message.answer(
-                f"❌ <b>{code}</b> kodli kino yoki serial topilmadi!\n\n"
+                f"❌ <b>«{code}»</b> kodli kino yoki serial topilmadi!\n\n"
                 "Iltimos, kodni to'g'ri kiritganingizni tekshiring.",
                 reply_markup=get_user_main_kb(is_admin=False),
                 parse_mode="HTML"
@@ -307,16 +308,17 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
         return
 
     bot_info = await bot.get_me()
+    m_code = movie["code"]
 
     # Agar SERIAL bo'lsa
     if movie["movie_type"] == "series":
-        episodes = await get_episodes(code)
+        episodes = await get_episodes(m_code)
         
         card_text = (
             f"📺 <b>{movie['title']}</b>\n\n"
-            f"🔢 Serial kodi: <code>{movie['code']}</code>\n"
-            f"📅 Yili: <b>{movie['year'] or 'Mavjud emas'}</b>\n"
-            f"🎭 Janri: <b>{movie['genre'] or 'Mavjud emas'}</b>\n"
+            f"🔢 Serial kodi: <code>{m_code}</code>\n"
+            f"📅 Yili: <b>{movie['year'] or 'Ko''rsatilmagan'}</b>\n"
+            f"🎭 Janri: <b>{movie['genre'] or 'Ko''rsatilmagan'}</b>\n"
             f"🇺🇿 Tili: <b>{movie['language']}</b>\n"
             f"📊 Qismlar soni: <b>{len(episodes)} ta</b>\n"
             f"👁 Ko'rishlar: <b>{movie['views']}</b>\n\n"
@@ -329,7 +331,7 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
 
         card_text += f"\n\n🤖 <b>Bizning bot:</b> @{bot_info.username}"
 
-        keyboard = get_episodes_kb(bot_info.username, movie["code"], episodes)
+        keyboard = get_episodes_kb(bot_info.username, m_code, episodes)
 
         if movie["photo_id"]:
             try:
@@ -347,28 +349,45 @@ async def send_movie_by_code(message: Message, bot: Bot, code: str):
         return
 
     # Agar BITTA FILM bo'lsa
-    caption = f"🎬 <b>{movie['title']}</b>\n\n🔢 Kino kodi: <code>{movie['code']}</code>\n👁 Ko'rishlar: {movie['views']}\n\n🤖 <b>Bizning bot:</b> @{bot_info.username}"
+    caption = f"🎬 <b>{movie['title']}</b>\n\n🔢 Kino kodi: <code>{m_code}</code>\n👁 Ko'rishlar: {movie['views']}\n\n🤖 <b>Bizning bot:</b> @{bot_info.username}"
+    file_id = movie.get("file_id", "").strip()
 
+    if not file_id:
+        await message.answer(
+            f"🎬 <b>{movie['title']}</b>\n🔢 Kodi: <code>{m_code}</code>\n\n⚠️ Ushbu kino videosi hali serverga yuklanmagan.",
+            parse_mode="HTML"
+        )
+        return
+
+    sent = False
     try:
         await message.answer_video(
-            video=movie["file_id"],
+            video=file_id,
             caption=caption,
             parse_mode="HTML",
-            reply_markup=get_share_movie_kb(bot_info.username, movie["code"])
+            reply_markup=get_share_movie_kb(bot_info.username, m_code)
         )
+        sent = True
     except Exception:
+        pass
+
+    if not sent:
         try:
             await message.answer_document(
-                document=movie["file_id"],
+                document=file_id,
                 caption=caption,
                 parse_mode="HTML",
-                reply_markup=get_share_movie_kb(bot_info.username, movie["code"])
+                reply_markup=get_share_movie_kb(bot_info.username, m_code)
             )
+            sent = True
         except Exception:
-            await message.answer(
-                f"🎬 <b>{movie['title']}</b>\n🔢 Kodi: <code>{movie['code']}</code>\n\n⚠️ Kinoni yuklashda xatolik yuz berdi.",
-                parse_mode="HTML"
-            )
+            pass
+
+    if not sent:
+        await message.answer(
+            f"🎬 <b>{movie['title']}</b>\n🔢 Kodi: <code>{m_code}</code>\n\n⚠️ Videoni yuborishda xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.",
+            parse_mode="HTML"
+        )
 
 
 @user_router.callback_query(F.data.startswith("show_ep:"))

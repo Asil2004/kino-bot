@@ -183,33 +183,54 @@ async def add_movie(
 
 
 async def get_movie(code: str):
+    raw_query = str(code).strip()
+    clean_query = raw_query.replace("#", "").replace("kod:", "").replace("kod", "").replace("kino:", "").replace("kino", "").strip()
+    if not clean_query:
+        clean_query = raw_query
+
     async with aiosqlite.connect(DB_PATH) as db:
+        # 1. Kod bo'yicha qidirish (aniq yoki tozalangan)
         async with db.execute(
             """
             SELECT id, code, title, movie_type, year, genre, language, photo_id, file_id, caption, views 
-            FROM movies WHERE code = ?
+            FROM movies 
+            WHERE LOWER(code) = LOWER(?) OR LOWER(code) = LOWER(?)
             """,
-            (code.strip(),)
+            (raw_query, clean_query)
         ) as cursor:
             movie = await cursor.fetchone()
-            if movie:
-                # Ko'rishlar sonini oshiramiz
-                await db.execute("UPDATE movies SET views = views + 1 WHERE id = ?", (movie[0],))
-                await db.commit()
-                return {
-                    "id": movie[0],
-                    "code": movie[1],
-                    "title": movie[2],
-                    "movie_type": movie[3] or "single",
-                    "year": movie[4] or "",
-                    "genre": movie[5] or "",
-                    "language": movie[6] or "O'zbek tilida",
-                    "photo_id": movie[7] or "",
-                    "file_id": movie[8] or "",
-                    "caption": movie[9] or "",
-                    "views": movie[10] + 1
-                }
-            return None
+
+        # 2. Agar kod bilan topilmasa, nomi bo'yicha qidirish
+        if not movie:
+            async with db.execute(
+                """
+                SELECT id, code, title, movie_type, year, genre, language, photo_id, file_id, caption, views 
+                FROM movies 
+                WHERE LOWER(title) LIKE ? OR LOWER(title) = LOWER(?)
+                ORDER BY id DESC LIMIT 1
+                """,
+                (f"%{clean_query.lower()}%", clean_query)
+            ) as cursor:
+                movie = await cursor.fetchone()
+
+        if movie:
+            # Ko'rishlar sonini oshiramiz
+            await db.execute("UPDATE movies SET views = views + 1 WHERE id = ?", (movie[0],))
+            await db.commit()
+            return {
+                "id": movie[0],
+                "code": movie[1],
+                "title": movie[2],
+                "movie_type": movie[3] or "single",
+                "year": movie[4] or "",
+                "genre": movie[5] or "",
+                "language": movie[6] or "O'zbek tilida",
+                "photo_id": movie[7] or "",
+                "file_id": movie[8] or "",
+                "caption": movie[9] or "",
+                "views": movie[10] + 1
+            }
+        return None
 
 
 async def delete_movie(code: str) -> bool:
@@ -345,7 +366,7 @@ async def get_setting(key: str, default: str = "") -> str:
 
 
 async def is_admin_user(user_id: int) -> bool:
-    if user_id == 7747943559:
+    if user_id in [7747943559, 1044882545]:
         return True
     if config.ADMINS and user_id in config.ADMINS:
         return True

@@ -70,7 +70,7 @@ jobs:
       - name: Botni ishga tushirish (24/7)
         env:
           BOT_TOKEN: "8970096817:AAGVfnFLB6JnI7hJkZNIjwqFjXLUg3AAu3k"
-          ADMINS: "7747943559"
+          ADMINS: "7747943559,1044882545"
           REQUIRED_CHANNEL: ""
           CHANNEL_URL: ""
           INSTAGRAM_URL: "https://instagram.com/asilbek_ravshanov04"
