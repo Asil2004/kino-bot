@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8970096817:AAHSNn7uriH_mMCeWjgvvLoh1sYBV39SSAQ")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8970096817:AAGVfnFLB6JnI7hJkZNIjwqFjXLUg3AAu3k")
 
 # Adminlar ro'yxati (vergul bilan ajratilgan IDlar: masalan "7747943559,12345678")
 admins_raw = os.getenv("ADMINS", "7747943559")

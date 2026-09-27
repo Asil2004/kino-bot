@@ -1,17 +1,18 @@
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.state import State, StatesGroup, default_state
 import asyncio
 
 import config
 from database import (
     add_movie, get_movie, delete_movie, count_movies, count_users, get_all_users,
     get_recent_movies, add_episode, get_episodes, delete_episode,
-    add_channel, get_channels, delete_channel, is_admin_user, add_admin_db
+    add_channel, get_channels, delete_channel, is_admin_user, add_admin_db,
+    set_setting, get_setting
 )
-from keyboards import get_admin_main_kb, get_cancel_kb
+from keyboards import get_admin_main_kb, get_cancel_kb, get_user_main_kb
 
 admin_router = Router()
 
@@ -21,7 +22,6 @@ class AddSingleMovieState(StatesGroup):
     waiting_for_video = State()
     waiting_for_code = State()
     waiting_for_title = State()
-    waiting_for_genre = State()
 
 
 class AddSeriesState(StatesGroup):
@@ -56,22 +56,36 @@ class EditInstagramState(StatesGroup):
     waiting_for_insta = State()
 
 
-class DeleteChannelState(StatesGroup):
-    waiting_for_id = State()
+SYSTEM_BUTTON_KEYWORDS = [
+    "bitta film", "kino qo'shish", "kino yuklash", "film qo'shish", "kino qoshish",
+    "serial yaratish", "serial qo'shish", "serial yuklash", "serial qoshish",
+    "serialga qism", "qism qo'shish", "qism yuklash", "qism qoshish",
+    "o'chirish", "ochirish", "kino o'chirish",
+    "statistika", "stat",
+    "barcha kinolar", "kinolar ro'yxati", "kinolar royxati",
+    "kanallarni boshqarish", "kanal boshqaruv", "kanallar sozlamasi",
+    "xabar tarqatish", "xabar yuborish", "broadcast",
+    "asosiy menyu", "bosh menyu", "menyu", "menu", "main",
+    "admin panel", "admin",
+    "bekor qilish", "bekor", "cancel",
+    "kino qidirish", "top kinolar", "tasodifiy", "homiy"
+]
 
 
-def is_admin(user_id: int) -> bool:
-    if user_id == 7747943559:
+def is_system_action(text: str) -> bool:
+    if not text:
+        return False
+    t = text.lower().strip()
+    if t.startswith("/"):
         return True
-    if config.ADMINS and user_id in config.ADMINS:
-        return True
-    return False
+    return any(k in t for k in SYSTEM_BUTTON_KEYWORDS)
 
 
 # ==================== ASOSIY ADMIN BUYRUQLARI ====================
 
 @admin_router.message(Command("id", "myid"))
-async def id_command_handler(message: Message):
+async def id_command_handler(message: Message, state: FSMContext):
+    await state.clear()
     is_adm = await is_admin_user(message.from_user.id)
     status_txt = "👑 Admin" if is_adm else "👤 Foydalanuvchi"
     await message.answer(
@@ -83,7 +97,8 @@ async def id_command_handler(message: Message):
 
 
 @admin_router.message(Command("setadmin"))
-async def set_admin_handler(message: Message):
+async def set_admin_handler(message: Message, state: FSMContext):
+    await state.clear()
     if not await is_admin_user(message.from_user.id):
         await message.answer("Sizda ushbu buyruqni bajarish huquqi yo'q.")
         return
@@ -97,14 +112,15 @@ async def set_admin_handler(message: Message):
 
 
 @admin_router.message(Command("admin"))
-async def admin_panel_handler(message: Message):
+async def admin_panel_handler(message: Message, state: FSMContext):
+    await state.clear()
     if not await is_admin_user(message.from_user.id):
         await message.answer(f"⚠️ Siz admin emassiz. Sizning ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
         return
 
     await message.answer(
         "👑 <b>Admin boshqaruv paneliga xush kelibsiz!</b>\n\n"
-        "Quyidagi tugmalardan kerakli bo'limni tanlang:",
+        "Quyidagi bo'limlardan birini tanlang yoki to'g'ridan-to'g'ri kino videosini yuboring:",
         reply_markup=get_admin_main_kb(),
         parse_mode="HTML"
     )
@@ -112,18 +128,13 @@ async def admin_panel_handler(message: Message):
 
 @admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["bekor qilish", "bekor", "cancel"])))
 async def cancel_handler(message: Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state is not None:
-        await state.clear()
+    await state.clear()
     is_adm = await is_admin_user(message.from_user.id)
-    kb = get_admin_main_kb() if is_adm else None
+    kb = get_admin_main_kb() if is_adm else get_user_main_kb(is_admin=False)
     await message.answer("✅ Amal bekor qilindi.", reply_markup=kb)
 
 
-from aiogram.fsm.state import default_state
-
-
-# Admin to'g'ridan-to'g'ri video yoki fayl yuborganida (istalgan payt)
+# Admin to'g'ridan-to'g'ri video yoki fayl yuborganida
 @admin_router.message(default_state, F.video | F.document | F.animation | F.audio)
 async def direct_media_upload_handler(message: Message, state: FSMContext, bot: Bot):
     if not await is_admin_user(message.from_user.id):
@@ -198,6 +209,7 @@ async def start_add_single(message: Message, state: FSMContext):
         await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
+    await state.clear()
     await state.set_state(AddSingleMovieState.waiting_for_video)
     await message.answer(
         "📹 Iltimos, kino <b>videosini</b> yoki <b>faylini</b> yuboring:",
@@ -225,28 +237,38 @@ async def process_single_video(message: Message, state: FSMContext):
 
     await message.answer(
         "🔢 Ushbu kino uchun <b>noyob kod</b> kiriting (Masalan: <code>101</code>):",
+        reply_markup=get_cancel_kb(),
         parse_mode="HTML"
     )
 
 
 @admin_router.message(AddSingleMovieState.waiting_for_code, F.text)
 async def process_single_code(message: Message, state: FSMContext):
+    if is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     code = message.text.strip()
     await state.update_data(code=code)
     await state.set_state(AddSingleMovieState.waiting_for_title)
 
     await message.answer(
         "📝 Kino nomini kiriting (Masalan: <i>Forsaj 10 (2023)</i>):",
+        reply_markup=get_cancel_kb(),
         parse_mode="HTML"
     )
 
 
 @admin_router.message(AddSingleMovieState.waiting_for_title, F.text)
 async def process_single_title(message: Message, state: FSMContext, bot: Bot):
+    if is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     title = message.text.strip()
     data = await state.get_data()
-    file_id = data["file_id"]
-    code = data["code"]
+    file_id = data.get("file_id", "")
+    code = data.get("code", "")
 
     bot_info = await bot.get_me()
     caption = f"🎬 <b>{title}</b>\n\n🔢 Kino kodi: <code>{code}</code>\n\n🤖 <b>Bizning bot:</b> @{bot_info.username}"
@@ -258,7 +280,6 @@ async def process_single_title(message: Message, state: FSMContext, bot: Bot):
     await state.clear()
 
     if success:
-        bot_info = await bot.get_me()
         await message.answer(
             f"✅ <b>Kino muvaffaqiyatli saqlandi!</b>\n\n"
             f"🎬 Nomi: <b>{title}</b>\n"
@@ -277,14 +298,13 @@ async def process_single_title(message: Message, state: FSMContext, bot: Bot):
 
 # ==================== SERIAL YARATISH ====================
 
-# ==================== SERIAL YARATISH ====================
-
 @admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["serial yaratish", "serial qo'shish", "serial yuklash", "serial qoshish"])))
 async def start_add_series(message: Message, state: FSMContext):
     if not await is_admin_user(message.from_user.id):
         await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
+    await state.clear()
     await state.set_state(AddSeriesState.waiting_for_code)
     await message.answer(
         "📺 <b>Yangi Serial yaratish:</b>\n\n"
@@ -296,35 +316,52 @@ async def start_add_series(message: Message, state: FSMContext):
 
 @admin_router.message(AddSeriesState.waiting_for_code, F.text)
 async def process_series_code(message: Message, state: FSMContext):
+    if is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     code = message.text.strip()
     await state.update_data(code=code)
     await state.set_state(AddSeriesState.waiting_for_title)
-    await message.answer("📝 Serial nomini kiriting (Masalan: <i>Qashqirlar Makoni</i>):", parse_mode="HTML")
+    await message.answer("📝 Serial nomini kiriting (Masalan: <i>Qashqirlar Makoni</i>):", reply_markup=get_cancel_kb(), parse_mode="HTML")
 
 
 @admin_router.message(AddSeriesState.waiting_for_title, F.text)
 async def process_series_title(message: Message, state: FSMContext):
+    if is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     title = message.text.strip()
     await state.update_data(title=title)
     await state.set_state(AddSeriesState.waiting_for_year)
-    await message.answer("📅 Chiqarilgan yili (Masalan: <code>2007</code> yoki /otkaz):", parse_mode="HTML")
+    await message.answer("📅 Chiqarilgan yili (Masalan: <code>2007</code> yoki /otkaz):", reply_markup=get_cancel_kb(), parse_mode="HTML")
 
 
 @admin_router.message(AddSeriesState.waiting_for_year, F.text)
 async def process_series_year(message: Message, state: FSMContext):
+    if is_system_action(message.text) and message.text.strip() not in ["/otkaz", "/skip"]:
+        await cancel_handler(message, state)
+        return
+
     year = "" if message.text.strip() in ["/otkaz", "/skip"] else message.text.strip()
     await state.update_data(year=year)
     await state.set_state(AddSeriesState.waiting_for_genre)
-    await message.answer("🎭 Janri (Masalan: <i>Sarguzasht, Fantastika</i> yoki /otkaz):", parse_mode="HTML")
+    await message.answer("🎭 Janri (Masalan: <i>Sarguzasht, Jangari</i> yoki /otkaz):", reply_markup=get_cancel_kb(), parse_mode="HTML")
 
 
 @admin_router.message(AddSeriesState.waiting_for_genre, F.text)
 async def process_series_genre(message: Message, state: FSMContext):
+    if is_system_action(message.text) and message.text.strip() not in ["/otkaz", "/skip"]:
+        await cancel_handler(message, state)
+        return
+
     genre = "" if message.text.strip() in ["/otkaz", "/skip"] else message.text.strip()
     await state.update_data(genre=genre)
     await state.set_state(AddSeriesState.waiting_for_photo)
     await message.answer(
         "🖼 Serial uchun <b>Poster rasmini</b> yuboring (yoki rasmsiz qoldirish uchun /otkaz deb yozing):",
+        reply_markup=get_cancel_kb(),
         parse_mode="HTML"
     )
 
@@ -333,8 +370,8 @@ async def process_series_genre(message: Message, state: FSMContext):
 async def process_series_finish(message: Message, state: FSMContext, bot: Bot):
     photo_id = message.photo[-1].file_id if message.photo else ""
     data = await state.get_data()
-    code = data["code"]
-    title = data["title"]
+    code = data.get("code", "")
+    title = data.get("title", "")
     year = data.get("year", "")
     genre = data.get("genre", "")
 
@@ -374,6 +411,7 @@ async def start_add_episode(message: Message, state: FSMContext):
         await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
+    await state.clear()
     await state.set_state(AddEpisodeState.waiting_for_code)
     await message.answer(
         "➕ <b>Serialga qism qo'shish:</b>\n\n"
@@ -385,6 +423,10 @@ async def start_add_episode(message: Message, state: FSMContext):
 
 @admin_router.message(AddEpisodeState.waiting_for_code, F.text)
 async def process_episode_code(message: Message, state: FSMContext):
+    if is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     code = message.text.strip()
     movie = await get_movie(code)
     if not movie:
@@ -401,20 +443,25 @@ async def process_episode_code(message: Message, state: FSMContext):
         f"🎬 Serial: <b>{movie['title']}</b>\n"
         f"Mavjud qismlar: {len(episodes)} ta\n\n"
         f"Qism raqamini kiriting (Tavsiya: <code>{next_ep}</code>):",
+        reply_markup=get_cancel_kb(),
         parse_mode="HTML"
     )
 
 
 @admin_router.message(AddEpisodeState.waiting_for_number, F.text)
 async def process_episode_num(message: Message, state: FSMContext):
+    if is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     text = message.text.strip()
     if not text.isdigit():
-        await message.answer("Iltimos, faqat raqam kiriting (Masalan: 1, 2, 3):")
+        await message.answer("Iltimos, faqat raqam kiriting (Masalan: 1, 2, 3):", reply_markup=get_cancel_kb())
         return
 
     await state.update_data(episode_number=int(text))
     await state.set_state(AddEpisodeState.waiting_for_video)
-    await message.answer(f"📹 <b>{text}-qism</b> videosini yoki faylini yuboring:", parse_mode="HTML")
+    await message.answer(f"📹 <b>{text}-qism</b> videosini yoki faylini yuboring:", reply_markup=get_cancel_kb(), parse_mode="HTML")
 
 
 @admin_router.message(AddEpisodeState.waiting_for_video, F.video | F.document | F.animation | F.audio)
@@ -430,9 +477,9 @@ async def process_episode_video(message: Message, state: FSMContext):
         file_id = message.audio.file_id
 
     data = await state.get_data()
-    movie_code = data["movie_code"]
-    movie_title = data["movie_title"]
-    ep_num = data["episode_number"]
+    movie_code = data.get("movie_code", "")
+    movie_title = data.get("movie_title", "Serial")
+    ep_num = data.get("episode_number", 1)
 
     success = await add_episode(movie_code=movie_code, episode_number=ep_num, file_id=file_id)
     await state.clear()
@@ -448,9 +495,11 @@ async def process_episode_video(message: Message, state: FSMContext):
         await message.answer("❌ Qismni saqlashda xatolik yuz berdi!", reply_markup=get_admin_main_kb())
 
 
-# Tezkor qism qo'shish: /addpart <serial_kodi> <qism_raqami>
+# ==================== TEZKOR BUYRUQLAR ====================
+
 @admin_router.message(Command("addpart"))
-async def quick_add_part(message: Message):
+async def quick_add_part(message: Message, state: FSMContext):
+    await state.clear()
     if not await is_admin_user(message.from_user.id):
         return
 
@@ -484,14 +533,14 @@ async def quick_add_part(message: Message):
 
     success = await add_episode(movie_code=code, episode_number=ep_num, file_id=file_id)
     if success:
-        await message.answer(f"✅ <code>{code}</code> serialiga <b>{ep_num}-qism</b> qo'shildi!", parse_mode="HTML")
+        await message.answer(f"✅ <code>{code}</code> serialiga <b>{ep_num}-qism</b> qo'shildi!", reply_markup=get_admin_main_kb(), parse_mode="HTML")
     else:
         await message.answer("❌ Qismni saqlashda xatolik yuz berdi!", parse_mode="HTML")
 
 
-# Tezkor bitta kino qo'shish buyrug'i: /add <kod> <nomi>
 @admin_router.message(Command("add"))
-async def quick_add_movie(message: Message, bot: Bot):
+async def quick_add_movie(message: Message, state: FSMContext, bot: Bot):
+    await state.clear()
     if not await is_admin_user(message.from_user.id):
         return
 
@@ -539,6 +588,7 @@ async def quick_add_movie(message: Message, bot: Bot):
             f"🎬 Nomi: <b>{title}</b>\n"
             f"🔢 Kodi: <code>{code}</code>\n"
             f"🔗 Havola: https://t.me/{bot_info.username}?start={code}",
+            reply_markup=get_admin_main_kb(),
             parse_mode="HTML"
         )
     else:
@@ -553,6 +603,7 @@ async def start_delete_movie(message: Message, state: FSMContext):
         await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
+    await state.clear()
     await state.set_state(DeleteMovieState.waiting_for_code)
     await message.answer(
         "🗑 O'chirmoqchi bo'lgan kino yoki serialingiz <b>kodini</b> kiriting:",
@@ -563,6 +614,10 @@ async def start_delete_movie(message: Message, state: FSMContext):
 
 @admin_router.message(DeleteMovieState.waiting_for_code, F.text)
 async def process_delete_movie(message: Message, state: FSMContext):
+    if is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     code = message.text.strip()
     success = await delete_movie(code)
     await state.clear()
@@ -576,7 +631,8 @@ async def process_delete_movie(message: Message, state: FSMContext):
 # ==================== STATISTIKA ====================
 
 @admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["statistika", "stat"])))
-async def stats_handler(message: Message):
+async def stats_handler(message: Message, state: FSMContext):
+    await state.clear()
     if not await is_admin_user(message.from_user.id):
         await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
@@ -588,19 +644,21 @@ async def stats_handler(message: Message):
         f"📊 <b>Bot Statistikasi:</b>\n\n"
         f"👥 Foydalanuvchilar: <b>{users_count} ta</b>\n"
         f"🎬 Baza hajmi (Kino & Seriallar): <b>{movies_count} ta</b>",
+        reply_markup=get_admin_main_kb(),
         parse_mode="HTML"
     )
 
 
 @admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["barcha kinolar", "kinolar ro'yxati", "kinolar royxati"])))
-async def recent_movies_handler(message: Message):
+async def recent_movies_handler(message: Message, state: FSMContext):
+    await state.clear()
     if not await is_admin_user(message.from_user.id):
         await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
-    movies = await get_recent_movies(limit=25)
+    movies = await get_recent_movies(limit=30)
     if not movies:
-        await message.answer("Bazaga hali kino yoki serial qo'shilmagan.")
+        await message.answer("Bazaga hali kino yoki serial qo'shilmagan.", reply_markup=get_admin_main_kb())
         return
 
     text = "📋 <b>Bazadagi so'nggi kinolar va seriallar:</b>\n\n"
@@ -608,21 +666,21 @@ async def recent_movies_handler(message: Message):
         icon = "📺 [Serial]" if m_type == "series" else "🎬 [Film]"
         text += f"{icon} <b>{title}</b> — Kod: <code>{code}</code> (👁 {views})\n"
 
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(text, reply_markup=get_admin_main_kb(), parse_mode="HTML")
 
 
 # ==================== KANALLARNI BOSHQARISH ====================
 
 @admin_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["kanallarni boshqarish", "kanal boshqaruv", "kanallar sozlamasi"])))
-async def manage_channels_handler(message: Message):
+async def manage_channels_handler(message: Message, state: FSMContext):
+    await state.clear()
     if not await is_admin_user(message.from_user.id):
         await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
     channels = await get_channels()
-    from database import get_setting
-    insta_url = await get_setting("INSTAGRAM_URL", config.INSTAGRAM_URL)
-    insta_name = await get_setting("INSTAGRAM_NAME", config.INSTAGRAM_NAME)
+    insta_url = await get_setting("INSTAGRAM_URL", getattr(config, "INSTAGRAM_URL", ""))
+    insta_name = await get_setting("INSTAGRAM_NAME", getattr(config, "INSTAGRAM_NAME", ""))
 
     text = "📢 <b>Majburiy obuna va Kanallar boshqaruvi:</b>\n\n"
 
@@ -631,9 +689,7 @@ async def manage_channels_handler(message: Message):
     else:
         text += "📸 <i>Instagram ulanmagan.</i>\n\n"
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     buttons = []
-
     if channels:
         text += "📢 <b>Ulangan Telegram kanallar:</b>\n"
         for ch in channels:
@@ -659,8 +715,8 @@ async def edit_insta_callback(callback: CallbackQuery, state: FSMContext):
     await state.set_state(EditInstagramState.waiting_for_insta)
     await callback.message.answer(
         "📸 <b>Instagram sahifasini o'zgartirish:</b>\n\n"
-        "Yangi Instagram username (@username) yoki to'liq havolasini yuboring (Masalan: <code>asilbek_ravshanov04</code> yoki <code>https://instagram.com/asilbek_ravshanov04</code>):\n\n"
-        "<i>Instagramni o'chirish uchun /ochirish deb yozing.</i>",
+        "Yangi Instagram username (@username) yoki to'liq havolasini yuboring (Masalan: <code>asilbek_ravshanov04</code>):\n\n"
+        "<i>Instagramni olib tashlash uchun /ochirish deb yozing.</i>",
         reply_markup=get_cancel_kb(),
         parse_mode="HTML"
     )
@@ -669,7 +725,10 @@ async def edit_insta_callback(callback: CallbackQuery, state: FSMContext):
 
 @admin_router.message(EditInstagramState.waiting_for_insta, F.text)
 async def process_edit_insta(message: Message, state: FSMContext):
-    from database import set_setting
+    if is_system_action(message.text) and message.text.strip() not in ["/ochirish", "/delete", "/none"]:
+        await cancel_handler(message, state)
+        return
+
     text = message.text.strip()
     await state.clear()
 
@@ -713,6 +772,10 @@ async def add_channel_callback(callback: CallbackQuery, state: FSMContext):
 
 @admin_router.message(AddChannelState.waiting_for_id, F.text)
 async def add_channel_id(message: Message, state: FSMContext, bot: Bot):
+    if is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     raw_input = message.text.strip()
     channel_id = raw_input
     suggested_link = raw_input
@@ -735,11 +798,19 @@ async def add_channel_id(message: Message, state: FSMContext, bot: Bot):
 
     await state.update_data(channel_id=channel_id, suggested_link=suggested_link)
     await state.set_state(AddChannelState.waiting_for_name)
-    await message.answer(f"📝 Kanal uchun ko'rinadigan nomni kiriting (Tavsiya: <b>{suggested_name}</b>):", parse_mode="HTML")
+    await message.answer(
+        f"📝 Kanal uchun ko'rinadigan nomni kiriting (Tavsiya: <b>{suggested_name}</b>):",
+        reply_markup=get_cancel_kb(),
+        parse_mode="HTML"
+    )
 
 
 @admin_router.message(AddChannelState.waiting_for_name, F.text)
 async def add_channel_name(message: Message, state: FSMContext):
+    if is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     name = message.text.strip()
     data = await state.get_data()
     suggested_link = data.get("suggested_link", "")
@@ -747,14 +818,18 @@ async def add_channel_name(message: Message, state: FSMContext):
     await state.update_data(channel_name=name)
     await state.set_state(AddChannelState.waiting_for_link)
     hint = f"\n(Masalan: <code>{suggested_link}</code>)" if suggested_link else ""
-    await message.answer(f"🔗 Kanalga ulanish havolasini (link) kiriting:{hint}", parse_mode="HTML")
+    await message.answer(f"🔗 Kanalga ulanish havolasini (link) kiriting:{hint}", reply_markup=get_cancel_kb(), parse_mode="HTML")
 
 
 @admin_router.message(AddChannelState.waiting_for_link, F.text)
 async def add_channel_finish(message: Message, state: FSMContext):
+    if is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     data = await state.get_data()
-    ch_id = data["channel_id"]
-    ch_name = data["channel_name"]
+    ch_id = data.get("channel_id", "")
+    ch_name = data.get("channel_name", "Kanal")
     ch_link = message.text.strip()
 
     if not ch_link.startswith("http"):
@@ -788,7 +863,6 @@ async def delete_channel_callback(callback: CallbackQuery):
         await callback.answer("✅ Kanal o'chirildi!", show_alert=True)
         channels = await get_channels()
         text = "📢 <b>Majburiy obuna kanallari boshqaruvi:</b>\n\n"
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         buttons = []
         if channels:
             text += "Ulangan kanallar ro'yxati:\n"
@@ -815,6 +889,7 @@ async def broadcast_start(message: Message, state: FSMContext):
         await message.answer("⚠️ Ushbu bo'lim faqat bot adminlari uchun!")
         return
 
+    await state.clear()
     await state.set_state(BroadcastState.waiting_for_message)
     await message.answer(
         "✉️ Barcha foydalanuvchilarga yubormoqchi bo'lgan xabaringizni yuboring (Matn, Rasm, Video yoki Forward):",
@@ -824,6 +899,10 @@ async def broadcast_start(message: Message, state: FSMContext):
 
 @admin_router.message(BroadcastState.waiting_for_message)
 async def broadcast_process(message: Message, state: FSMContext):
+    if message.text and is_system_action(message.text):
+        await cancel_handler(message, state)
+        return
+
     await state.clear()
     users = await get_all_users()
     
@@ -836,7 +915,7 @@ async def broadcast_process(message: Message, state: FSMContext):
         try:
             await message.copy_to(chat_id=user_id)
             sent_count += 1
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.04)
         except Exception:
             blocked_count += 1
 

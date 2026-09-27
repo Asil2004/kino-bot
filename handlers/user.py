@@ -44,6 +44,8 @@ GREETING_WORDS = [
 
 
 def is_system_or_button_text(text: str) -> bool:
+    if not text:
+        return False
     t = text.lower().strip()
     if t.startswith("/"):
         return True
@@ -89,7 +91,8 @@ async def check_user_subscriptions(bot: Bot, user_id: int) -> tuple[bool, list, 
 
 
 @user_router.message(CommandStart())
-async def start_handler(message: Message, bot: Bot):
+async def start_handler(message: Message, state: FSMContext, bot: Bot):
+    await state.clear()
     user = message.from_user
     await add_user(user.id, user.username, user.full_name)
 
@@ -118,19 +121,29 @@ async def start_handler(message: Message, bot: Bot):
     if movie_code:
         await send_movie_by_code(message, bot, movie_code)
     else:
-        await message.answer(
-            f"👋 <b>Assalomu alaykum, {user.first_name}!</b>\n\n"
-            "🎬 <b>Bugun kinolar botiga xush kelibsiz!</b>\n\n"
-            "🔍 Kinoni topish uchun uning <b>kodini yuboring</b> yoki menyudan kerakli bo'limni tanlang.",
-            reply_markup=get_user_main_kb(is_admin=is_admin),
-            parse_mode="HTML"
-        )
+        if is_admin:
+            await message.answer(
+                f"👋 <b>Assalomu alaykum, Admin {user.first_name}!</b>\n\n"
+                "🎬 <b>Bugun kinolar bot boshqaruviga xush kelibsiz!</b>\n\n"
+                "Quyidagi menyudan foydalanishingiz yoki to'g'ridan-to'g'ri kino videosini yuborishingiz mumkin:",
+                reply_markup=get_admin_main_kb(),
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer(
+                f"👋 <b>Assalomu alaykum, {user.first_name}!</b>\n\n"
+                "🎬 <b>Bugun kinolar botiga xush kelibsiz!</b>\n\n"
+                "🔍 Kinoni topish uchun uning <b>kodini yuboring</b> (Masalan: <code>111</code>) yoki menyudan kerakli bo'limni tanlang.",
+                reply_markup=get_user_main_kb(is_admin=False),
+                parse_mode="HTML"
+            )
 
 
 # ==================== ASOSIY MENYU BUYRUQLARI ====================
 
 @user_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["asosiy menyu", "bosh menyu", "menyu", "/menu", "/main"])))
-async def home_menu_handler(message: Message):
+async def home_menu_handler(message: Message, state: FSMContext):
+    await state.clear()
     is_admin = await is_admin_user(message.from_user.id)
     await message.answer(
         "🏠 <b>Asosiy menyu:</b>\nKerakli bo'limni tanlang yoki kino kodini yuboring:",
@@ -140,16 +153,18 @@ async def home_menu_handler(message: Message):
 
 
 @user_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["kino qidirish", "qidiruv", "kino izlash", "/search"])))
-async def search_hint_handler(message: Message):
+async def search_hint_handler(message: Message, state: FSMContext):
+    await state.clear()
     await message.answer(
         "🔍 <b>Kino yoki Serialni topish:</b>\n\n"
-        "Iltimos, tomosha qilmoqchi bo'lgan filmingiz yoki serialingiz <b>kodini yuboring</b> (Masalan: <code>105</code>).",
+        "Iltimos, tomosha qilmoqchi bo'lgan filmingiz yoki serialingiz <b>kodini yuboring</b> (Masalan: <code>111</code>).",
         parse_mode="HTML"
     )
 
 
 @user_router.message(F.text.func(lambda t: t and ("top kinolar" in t.lower() or "top kino" in t.lower() or t.lower().strip() in ["/top", "top", "🔥 top kinolar"])))
-async def top_movies_handler(message: Message):
+async def top_movies_handler(message: Message, state: FSMContext):
+    await state.clear()
     movies = await get_top_movies(limit=10)
     if not movies:
         await message.answer("Bazaga hali kinolar qo'shilmagan.")
@@ -165,7 +180,8 @@ async def top_movies_handler(message: Message):
 
 
 @user_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["tasodifiy film", "tasodifiy kino", "tasodifiy", "/tasodifiy", "random"])))
-async def random_movie_handler(message: Message, bot: Bot):
+async def random_movie_handler(message: Message, state: FSMContext, bot: Bot):
+    await state.clear()
     code = await get_random_movie_code()
     if not code:
         await message.answer("Bazaga hali kino qo'shilmagan.")
@@ -176,7 +192,8 @@ async def random_movie_handler(message: Message, bot: Bot):
 
 
 @user_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["homiy sahifalar", "homiy", "kanallarimiz", "/obuna", "obuna"])))
-async def test_subscription_handler(message: Message, bot: Bot):
+async def test_subscription_handler(message: Message, state: FSMContext):
+    await state.clear()
     channels = await get_channels()
     all_channels = []
     if getattr(config, "REQUIRED_CHANNEL", None):
@@ -196,7 +213,8 @@ async def test_subscription_handler(message: Message, bot: Bot):
 
 
 @user_router.message(F.text.func(lambda t: t and any(w in t.lower() for w in ["admin panel", "👑 admin panel", "🛠 admin panel", "/admin", "admin"])))
-async def admin_button_handler(message: Message):
+async def admin_button_handler(message: Message, state: FSMContext):
+    await state.clear()
     if await is_admin_user(message.from_user.id):
         await message.answer("👑 <b>Admin boshqaruv paneli:</b>", reply_markup=get_admin_main_kb(), parse_mode="HTML")
     else:
@@ -259,10 +277,11 @@ async def check_sub_callback(callback: CallbackQuery, bot: Bot):
     if movie_code:
         await send_movie_by_code(callback.message, bot, movie_code)
     else:
+        kb = get_admin_main_kb() if is_admin else get_user_main_kb(is_admin=False)
         await callback.message.answer(
             "✅ <b>Tabriklaymiz, a'zolik tasdiqlandi!</b>\n\n"
-            "Endi kino yoki serial <b>kodini yuborishingiz</b> mumkin (Masalan: <code>105</code>).",
-            reply_markup=get_user_main_kb(is_admin=is_admin),
+            "Endi kino yoki serial <b>kodini yuborishingiz</b> mumkin (Masalan: <code>111</code>).",
+            reply_markup=kb,
             parse_mode="HTML"
         )
 
@@ -421,7 +440,6 @@ async def show_series_callback(callback: CallbackQuery, bot: Bot):
 
 @user_router.message(StateFilter(None), F.text)
 async def code_input_handler(message: Message, state: FSMContext, bot: Bot):
-    # Agar admin yoki foydalanuvchi biror FSM holatida (wizardda) bo'lsa kino qidirmaymiz
     cur_state = await state.get_state()
     if cur_state is not None:
         return
@@ -436,12 +454,12 @@ async def code_input_handler(message: Message, state: FSMContext, bot: Bot):
     await add_user(user_id, message.from_user.username, message.from_user.full_name)
     is_admin = await is_admin_user(user_id)
 
-    # Agar salomlashish yoki umumiy so'z bo'lsa, xush kelibsiz xabarini chiqaramiz
+    # Salomlashish
     if text.lower() in GREETING_WORDS:
         kb = get_admin_main_kb() if is_admin else get_user_main_kb(is_admin=False)
         await message.answer(
             f"👋 <b>Assalomu alaykum, {message.from_user.first_name}!</b>\n\n"
-            "🔍 Kinoni tomosha qilish uchun uning <b>kodini yuboring</b> (Masalan: <code>111</code>) yoki quyidagi menyudan foydalaning.",
+            "🔍 Kinoni tomosha qilish uchun uning <b>kodini yuboring</b> (Masalan: <code>111</code>) yoki menyudan foydalaning.",
             reply_markup=kb,
             parse_mode="HTML"
         )

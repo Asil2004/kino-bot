@@ -69,7 +69,7 @@ jobs:
 
       - name: Botni ishga tushirish (24/7)
         env:
-          BOT_TOKEN: "8970096817:AAHSNn7uriH_mMCeWjgvvLoh1sYBV39SSAQ"
+          BOT_TOKEN: "8970096817:AAGVfnFLB6JnI7hJkZNIjwqFjXLUg3AAu3k"
           ADMINS: "7747943559"
           REQUIRED_CHANNEL: ""
           CHANNEL_URL: ""
