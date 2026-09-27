@@ -5,8 +5,8 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
   schedule:
-    # Har 3 soatda avtomatik yangilanib, uzluksiz 24/7 ishlashini ta'minlaydi
-    - cron: '0 */3 * * *'
+    # Har 2 soatda avtomatik yangilanib, uzluksiz 24/7 ishlashini ta'minlaydi
+    - cron: '0 */2 * * *'
 
 concurrency:
   group: telegram-kino-bot-service
@@ -79,7 +79,10 @@ jobs:
           echo "=========================================="
           echo "🤖 Bugunkinolar_bot 24/7 yagona nusxada ishlamoqda..."
           echo "=========================================="
-          python bot.py
+          until python bot.py; do
+            echo "Bot jarayoni to'xtadi ($?). 3 soniyadan so'ng avtomatik qayta ishga tushirilmoqda..."
+            sleep 3
+          done
 
       - name: Baza o'zgarishlarini saqlash
         if: always()

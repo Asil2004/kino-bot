@@ -58,7 +58,13 @@ async def main():
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logging.info("Bot to'xtatildi.")
+    import time
+    while True:
+        try:
+            asyncio.run(main())
+        except (KeyboardInterrupt, SystemExit):
+            logging.info("Bot foydalanuvchi tomonidan to'xtatildi.")
+            break
+        except Exception as e:
+            logging.error(f"Kutilmagan xatolik yuz berdi: {e}. 3 soniyadan so'ng bot avtomatik qayta ishga tushiriladi...")
+            time.sleep(3)
