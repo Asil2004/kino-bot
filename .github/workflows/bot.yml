@@ -5,12 +5,12 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
   schedule:
-    # Har 2 soatda avtomatik yangilanib, uzluksiz 24/7 ishlashini ta'minlaydi
-    - cron: '0 */2 * * *'
+    # Har 1 soatda avtomatik tekshiruv (zaxira reja)
+    - cron: '0 * * * *'
 
 concurrency:
   group: telegram-kino-bot-service
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -29,45 +29,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Eski ishlayotgan barcha nusxalarni to'xtatish (Kill duplicate instances)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          CURRENT_RUN: ${{ github.run_id }}
-        run: |
-          python -c "
-          import urllib.request, json, os, time
-          token = os.environ.get('GH_TOKEN')
-          repo = os.environ.get('REPO')
-          current_run = int(os.environ.get('CURRENT_RUN', 0))
-          headers = {'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json'}
-          
-          for status in ['in_progress', 'queued']:
-              url = f'https://api.github.com/repos/{repo}/actions/runs?status={status}'
-              req = urllib.request.Request(url, headers=headers)
-              try:
-                  with urllib.request.urlopen(req) as response:
-                      data = json.loads(response.read().decode())
-                      for run in data.get('workflow_runs', []):
-                          run_id = run['id']
-                          if run_id != current_run:
-                              print(f'Eski duplicate runner bekor qilinmoqda: {run_id}')
-                              cancel_req = urllib.request.Request(f'https://api.github.com/repos/{repo}/actions/runs/{run_id}/cancel', headers=headers, method='POST')
-                              try:
-                                  urllib.request.urlopen(cancel_req)
-                              except Exception:
-                                  pass
-              except Exception as e:
-                  print('Status check error:', e)
-          time.sleep(3)
-          "
-
       - name: Kerakli kutubxonalarni o'rnatish
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Botni ishga tushirish (24/7)
+      - name: Botni uzluksiz ishga tushirish (24/7 Avtomatik estafeta)
         env:
           BOT_TOKEN: "8970096817:AAGVfnFLB6JnI7hJkZNIjwqFjXLUg3AAu3k"
           ADMINS: "7747943559,1044882545"
@@ -75,14 +42,78 @@ jobs:
           CHANNEL_URL: ""
           INSTAGRAM_URL: "https://instagram.com/asilbek_ravshanov04"
           INSTAGRAM_NAME: "asilbek_ravshanov04"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN: ${{ github.run_id }}
         run: |
-          echo "=========================================="
-          echo "🤖 Bugunkinolar_bot 24/7 yagona nusxada ishlamoqda..."
-          echo "=========================================="
-          until python bot.py; do
-            echo "Bot jarayoni to'xtadi ($?). 3 soniyadan so'ng avtomatik qayta ishga tushirilmoqda..."
-            sleep 3
-          done
+          python -c "
+          import subprocess, time, os, urllib.request, json, sys
+
+          RUN_DURATION = 5 * 3600  # 5 soatlik uzluksiz sikl
+
+          print('==========================================')
+          print('🤖 Bugunkinolar_bot 24/7 ishga tushirilmoqda...')
+          print('==========================================')
+
+          # Eski qolgan parallel runnerlarni to'xtatish
+          token = os.environ.get('GH_TOKEN')
+          repo = os.environ.get('REPO')
+          current_run = int(os.environ.get('CURRENT_RUN', 0))
+          if token and repo:
+              headers = {'Authorization': f'token {token}', 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Bot-Runner'}
+              try:
+                  url = f'https://api.github.com/repos/{repo}/actions/runs?status=in_progress'
+                  req = urllib.request.Request(url, headers=headers)
+                  with urllib.request.urlopen(req) as response:
+                      data = json.loads(response.read().decode())
+                      for run in data.get('workflow_runs', []):
+                          run_id = run['id']
+                          if run_id < current_run:
+                              print(f'Eski runner toxtatilmoqda: {run_id}')
+                              cancel_req = urllib.request.Request(f'https://api.github.com/repos/{repo}/actions/runs/{run_id}/cancel', headers=headers, method='POST')
+                              try:
+                                  urllib.request.urlopen(cancel_req)
+                              except Exception:
+                                  pass
+              except Exception as e:
+                  print('Status check:', e)
+
+          proc = subprocess.Popen([sys.executable, 'bot.py'])
+          start_time = time.time()
+
+          while True:
+              ret = proc.poll()
+              if ret is not None:
+                  print(f'⚠️ Bot toxtadi ({ret}). 3 soniyadan song qayta ishga tushirilmoqda...')
+                  time.sleep(3)
+                  proc = subprocess.Popen([sys.executable, 'bot.py'])
+
+              elapsed = time.time() - start_time
+              if elapsed >= RUN_DURATION:
+                  print('⏰ 5 soatlik reja yakunlandi. Keyingi 24/7 runner ishga tushirilmoqda...')
+                  if token and repo:
+                      headers = {
+                          'Authorization': f'token {token}',
+                          'Accept': 'application/vnd.github.v3+json',
+                          'User-Agent': 'Bot-Relay'
+                      }
+                      url = f'https://api.github.com/repos/{repo}/actions/workflows/bot.yml/dispatches'
+                      req = urllib.request.Request(url, data=json.dumps({'ref': 'main'}).encode(), headers=headers, method='POST')
+                      try:
+                          with urllib.request.urlopen(req) as resp:
+                              print('✅ Yangi 24/7 runner muvaffaqiyatli ishga tushirildi!')
+                      except Exception as e:
+                          print('⚠️ Dispatch xabari:', e)
+
+                  proc.terminate()
+                  try:
+                      proc.wait(timeout=10)
+                  except subprocess.TimeoutExpired:
+                      proc.kill()
+                  break
+
+              time.sleep(5)
+          "
 
       - name: Baza o'zgarishlarini saqlash
         if: always()

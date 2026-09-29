@@ -52,8 +52,8 @@ async def main():
 
     logging.info("Bot muvaffaqiyatli ishga tushirildi!")
     
-    # Eski yangilanishlarni o'chirib, yangilarini qabul qilish
-    await bot.delete_webhook(drop_pending_updates=True)
+    # Webhookni tozalash va to'plangan barcha xabarlarni qayta ishlash
+    await bot.delete_webhook(drop_pending_updates=False)
     await dp.start_polling(bot)
 
 
